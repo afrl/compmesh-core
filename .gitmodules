@@ -1,0 +1,3 @@
+[submodule "external/ftetwild"]
+	path = external/ftetwild
+	url = git@gitlab.hyperthought.io:rxcc_computation/mesh_generation/ftetwild.git

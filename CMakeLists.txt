@@ -67,8 +67,8 @@ macro(SPECIAL_TARGET_COMMANDS)
     endif()
     target_link_libraries(comp_mesh_core PUBLIC igl::core)
 
-    add_subdirectory(ftetwild)
-    target_link_libraries(comp_mesh_core PUBLIC FloatTetwild)
+    add_subdirectory(external/ftetwild)
+    target_link_libraries(comp_mesh_core PRIVATE FloatTetwild)
 endmacro()
 
 # Options
