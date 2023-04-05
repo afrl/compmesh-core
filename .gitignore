@@ -1,0 +1,27 @@
+# Standard generated files/folders
+build*
+install_dir*
+__pycache__/
+*.GENERATED.*
+*~$*
+*~
+*.log
+*.pyc
+*.swp
+*.vs/
+*.vscode/
+
+# Doc
+docs/html
+docs/*_tagfile
+*_tagfile
+
+# Local-only
+mklvars.bat
+mklvars.bat.lnk
+makefile
+
+
+# Module-specific files
+
+
