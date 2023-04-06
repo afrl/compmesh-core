@@ -13,8 +13,12 @@ specialized_opts = [
 
     SpecializedCMakeOption(config_var='bind-fortran', help_str='Build FORTRAN bindings for module',
                            option_type=SpecializedOptionType.CMakeBool,
-                           modules_to_vars_map={'comp_mesh_core': ['SHEFF_BuildFortran']})
-                           
+                           modules_to_vars_map={'comp_mesh_core': ['SHEFF_BuildFortran']}),
+    
+    SpecializedCMakeOption(option_type=SpecializedOptionType.CMakeWarningFlag,
+                           modules_to_vars_map={'comp_mesh_core': ['no-dev']})
+
+
 ]
 
 make_helper.make(specialized_opts)

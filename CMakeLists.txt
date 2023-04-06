@@ -55,11 +55,11 @@ macro(SPECIAL_TARGET_COMMANDS)
     set(LIBIGL_RESTRICTED_MOSEK      OFF CACHE BOOL "" FORCE)
     set(LIBIGL_RESTRICTED_TRIANGLE   OFF CACHE BOOL "" FORCE)
     add_subdirectory(external/libigl)
-    target_link_libraries(comp_mesh_core PRIVATE igl_core)
-    target_link_libraries(comp_mesh_core PRIVATE igl_copyleft_cgal)
+    target_link_libraries(comp_mesh_core PUBLIC igl_core)
+    target_link_libraries(comp_mesh_core PUBLIC igl_copyleft_cgal)
 
-    #add_subdirectory(external/ftetwild)
-    #target_link_libraries(comp_mesh_core PRIVATE FloatTetwild)
+    add_subdirectory(external/ftetwild)
+    target_link_libraries(comp_mesh_core PUBLIC FloatTetwild)
 endmacro()
 
 # Options
