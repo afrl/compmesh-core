@@ -1,15 +1,15 @@
 #pragma once
 
-#include "FeatureIdentification.h"
+#include "mesh/Mesh.h"
 
 namespace composite_mesher
 {
 /// @brief Optimizes a surface mesh using tangential smoothing, while preserving features.
 void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                                    const std::vector<std::array<mesh::LocalIndex, 2>>& edges,
-                                   const SeamIDType& n_seams,
+                                   const int& n_seams,
                                    const std::vector<mesh::LocalIndex>& edges_on_seams,
-                                   const std::vector<SeamIDType>& edge_id_to_seam_id_map,
+                                   const std::vector<int>& edge_id_to_seam_id_map,
                                    const bool allow_smoothing_on_seams = true);
 
 void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,

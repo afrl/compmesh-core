@@ -1,4 +1,4 @@
-#include "composite_mesher/IGLHelpers.h"
+#include "comp_mesh_core/IGLHelpers.h"
 
 #include "mesh/algorithms/Search.h"
 #include "simple_math/Utility.h"

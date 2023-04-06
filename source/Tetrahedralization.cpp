@@ -1,6 +1,6 @@
-#include "composite_mesher/Tetrahedralization.h"
+#include "comp_mesh_core/Tetrahedralization.h"
 
-#include "composite_mesher/Common.h"
+#include "comp_mesh_core/Common.h"
 #include "mesh/common/ElementTypes.h"
 
 namespace composite_mesher

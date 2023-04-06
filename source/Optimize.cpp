@@ -1,30 +1,20 @@
-#include "composite_mesher/Optimize.h"
+#include "comp_mesh_core/Optimize.h"
 
-#include "composite_mesher/GlobalOptions.h"
-#include "composite_mesher/IGLHelpers.h"
-//#include "mesh/algorithms/Groups.h"
+#include "comp_mesh_core/GlobalOptions.h"
+#include "comp_mesh_core/IGLHelpers.h"
 #include "mesh/algorithms/IO.h"
-//#include "mesh/algorithms/Search.h"
-#include "mesh/algorithms/Polygons.h"
-#include "mesh/algorithms/TetgenHelpers.h"
 #include "mesh/relations/NodeToElementMap.h"
-#include "second_party_mesh/tetgen/tetgen.h"
-#include "second_party_mesh/triangle/triangle.h"
-#include "simple_math/Utility.h"
 #include "utility/Hash.h"
-
-#include <tuple>
-#include <unordered_map>
-#include <unordered_set>
+#include "utility/VectorSet.h"
 
 namespace composite_mesher
 {
 
 void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                                    const std::vector<std::array<mesh::LocalIndex, 2>>& edges,
-                                   const SeamIDType& n_seams,
+                                   const int& n_seams,
                                    const std::vector<mesh::LocalIndex>& edges_on_seams,
-                                   const std::vector<SeamIDType>& edge_id_to_seam_id_map,
+                                   const std::vector<int>& edge_id_to_seam_id_map,
                                    const bool allow_smoothing_on_seams)
 {
     if (GlobalOptions::get().write_debug_meshes)

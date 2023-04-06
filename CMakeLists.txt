@@ -35,40 +35,31 @@ set(SHEFF_EXTERNAL_DEPENDS_targets "")
 set(SHEFF_EXTERNAL_DEPENDS_compile_defs "")
 
 macro(SPECIAL_TARGET_COMMANDS)
-    # Note: IGL has a wacky dependency structure since they do not export targets.
-    #       I was able to incorporate it like other third-party modules into the
-    #       build system, but the targets are oddly missing.
-    # See: https://github.com/libigl/libigl/releases/tag/v2.4.0
-    #
-    # Consequently, IGL has to be brought in after Eigen is available
-    if(NOT TARGET igl::core)
-        include(FetchContent)
-        FetchContent_Declare(
-            libigl
-            GIT_REPOSITORY https://github.com/libigl/libigl.git
-            GIT_TAG 90464ff
-        )
-        FetchContent_MakeAvailable(libigl)
+    # LIBIGL Options
+    set(LIBIGL_BUILD_TESTS           OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_BUILD_TUTORIALS       OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_INSTALL               ON  CACHE BOOL "" FORCE)
+    # Components to include
+    set(LIBIGL_PREDICATES            ON  CACHE BOOL "" FORCE)
+    set(LIBIGL_COPYLEFT_CGAL         ON  CACHE BOOL "" FORCE)
+    # Components to exclude
+    set(LIBIGL_EMBREE                OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_GLFW                  OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_IMGUI                 OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_OPENGL                OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_PNG                   OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_XML                   OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_COPYLEFT_COMISO       OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_COPYLEFT_TETGEN       OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_RESTRICTED_MATLAB     OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_RESTRICTED_MOSEK      OFF CACHE BOOL "" FORCE)
+    set(LIBIGL_RESTRICTED_TRIANGLE   OFF CACHE BOOL "" FORCE)
+    add_subdirectory(external/libigl)
+    target_link_libraries(comp_mesh_core PRIVATE igl_core)
+    target_link_libraries(comp_mesh_core PRIVATE igl_copyleft_cgal)
 
-        # Enable the target igl::predicates
-        igl_include(predicates)
-
-        # Important note pertaining to copyleft code:
-        # The option to bring in CGAL (a viral open-source project) into the project
-        # exists to support the Composite Mesher tool, which will be open-sourced
-        # once matured.  Since both need IGL, we want to bring in IGL exactly once
-        # to ensure 
-
-        # Actually...test if we can separate it
-
-
-        # Enable the target igl_copyleft::cgal
-        #igl_include(copyleft cgal)
-    endif()
-    target_link_libraries(comp_mesh_core PUBLIC igl::core)
-
-    add_subdirectory(external/ftetwild)
-    target_link_libraries(comp_mesh_core PRIVATE FloatTetwild)
+    #add_subdirectory(external/ftetwild)
+    #target_link_libraries(comp_mesh_core PRIVATE FloatTetwild)
 endmacro()
 
 # Options

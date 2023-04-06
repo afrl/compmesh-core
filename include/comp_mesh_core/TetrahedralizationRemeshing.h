@@ -1,8 +1,7 @@
 ﻿#pragma once
 
-#include "composite_mesher/FeatureIdentification.h"
-#include "composite_mesher/GlobalOptions.h"
-#include "composite_mesher/Tetrahedralization.h"
+#include "comp_mesh_core/GlobalOptions.h"
+#include "comp_mesh_core/Tetrahedralization.h"
 #include "mesh/algorithms/IO.h"
 #include "simple_math/Utility.h"
 

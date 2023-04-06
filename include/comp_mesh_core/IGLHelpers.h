@@ -1,6 +1,5 @@
 #pragma once
 
-#include "CombineSurfaces.h"
 #include "Tetrahedralization.h"
 #include "igl/AABB.h"
 #include "mesh/Mesh.h"

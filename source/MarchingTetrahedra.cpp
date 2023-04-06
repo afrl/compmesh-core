@@ -1,4 +1,4 @@
-#include "composite_mesher/MarchingTetrahedra.h"
+#include "comp_mesh_core/MarchingTetrahedra.h"
 
 #include "simple_math/Utility.h"
 

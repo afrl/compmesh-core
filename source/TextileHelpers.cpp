@@ -1,7 +1,7 @@
-#include "composite_mesher/TextileHelpers.h"
+#include "comp_mesh_core/TextileHelpers.h"
 
 #include "Eigen/Eigen"
-#include "composite_mesher/IGLHelpers.h"
+#include "comp_mesh_core/IGLHelpers.h"
 #include "igl/bfs_orient.h"
 #include "mesh/algorithms/IO.h"
 #include "mesh/algorithms/Manipulation.h"
