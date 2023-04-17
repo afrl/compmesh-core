@@ -60,6 +60,7 @@ mesh::Mesh extract_volume(const Tetrahedralization& t);
 ////////////////////////////////////////////
 // Functions that are helpful for debugging
 
+void write_debug_mesh_state_to_vtk(const Tetrahedralization& t, const std::string& filestem);
 bool check_tri_edge_relations(const Tetrahedralization& t);
 bool check_tet_edge_relations(const Tetrahedralization& t);
 bool check_tet_tri_relations(const Tetrahedralization& t);

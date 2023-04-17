@@ -23,6 +23,7 @@ struct TriangleNewEdgeInfo
 {
     mesh::LocalIndex new_triangle_id;
     mesh::LocalIndex new_edge_id;
+    bool is_edge_aligned;
 };
 
 /// @returns Map from original triangle -> { new triangle, new internal edge }
@@ -47,7 +48,7 @@ std::map<mesh::LocalIndex, TriangleNewEdgeInfo> split_triangles_on_edge(
     // Add an entry for the new edge
     edge_to_tris_map.push_back({});
 
-    // Map from original triangle -> { new triangle, new internal edge }
+    // Map from original triangle -> { new triangle, new internal edge, is_edge_aligned }
     std::map<mesh::LocalIndex, TriangleNewEdgeInfo> tri_updates;
 
     // Note: parent_infos is intentionally not a reference since edge_id_to_triangles_ is modified
@@ -118,7 +119,8 @@ std::map<mesh::LocalIndex, TriangleNewEdgeInfo> split_triangles_on_edge(
         // If the direction of edge in the triangle matches the direction of the global edge, then:
         //  - triangle t gets the recycled edge (n_1->new_node), so no update needed
         //  - triangle new_t gets the new edge (new_node->n_2)
-        if (t_conn[split_edge_info.connectivity[0]] == n_1_id)
+        auto edge_aligned = t_conn[split_edge_info.connectivity[0]] == n_1_id;
+        if (edge_aligned)
         {
             // Update relationships relating to the new triangle for new_n->n_2
             tri_to_edges_map[new_t_id][split_half_edge_position_in_new_t] = new_split_edge_id;
@@ -179,7 +181,7 @@ std::map<mesh::LocalIndex, TriangleNewEdgeInfo> split_triangles_on_edge(
             }
         }
 
-        tri_updates[t_id] = { new_t_id, new_internal_edge_id };
+        tri_updates[t_id] = { new_t_id, new_internal_edge_id, edge_aligned };
     }
     return tri_updates;
 }
@@ -502,9 +504,10 @@ TetrahedraUpdateResult update_tetrahedra_on_split_edge(
                 }
                 const auto& new_split_tri_index = find_iter->second.new_triangle_id;
                 new_internal_edge_index         = find_iter->second.new_edge_id;
+                const auto& is_tri_edge_aligned = find_iter->second.is_edge_aligned;
 
                 // Update tet-tri relationships for the split triangles
-                if (edge_aligned)
+                if (edge_aligned == is_tri_edge_aligned)
                 {
                     // The recycled tet will get the original tri
                     // The new tet will get the new tri created from the split
@@ -518,6 +521,8 @@ TetrahedraUpdateResult update_tetrahedra_on_split_edge(
                         assert(tri_to_tet_map[new_split_tri_index][1] == orig_tet_index);
                         tri_to_tet_map[new_split_tri_index][1] = new_tet_index;
                     }
+                    tet_to_tri_map[new_tet_index][split_face_position]  = new_split_tri_index;
+                    tet_to_tri_map[orig_tet_index][split_face_position] = orig_split_tri_index;
                 }
                 else
                 {
@@ -533,6 +538,8 @@ TetrahedraUpdateResult update_tetrahedra_on_split_edge(
                         assert(tri_to_tet_map[new_split_tri_index][1] == orig_tet_index);
                         tri_to_tet_map[orig_split_tri_index][1] = new_tet_index;
                     }
+                    tet_to_tri_map[new_tet_index][split_face_position]  = orig_split_tri_index;
+                    tet_to_tri_map[orig_tet_index][split_face_position] = new_split_tri_index;
                 }
             }
 
@@ -599,6 +606,7 @@ void split_single_edge(const mesh::LocalIndex& edge_id,
       detail::update_tetrahedra_on_split_edge(edge_id, new_n_n_2_edge_id, tri_updates, t);
     assert(check_tet_edge_relations(t));
     assert(check_tri_edge_relations(t));
+    assert(check_tet_tri_relations(t));
 
     state.current_to_orig_edge_map.resize(state.current_to_orig_edge_map.size() +
                                             tri_updates.size() +
