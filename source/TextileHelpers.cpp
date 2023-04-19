@@ -842,6 +842,8 @@ double triangulate_tow_surface(VTMSTowMesh& tow_surface, const bool refine)
         }
     }
 
+    tow_surface.type = VTMSTowMesh::MeshType::TRI;
+
     auto seg_stats = calc_segment_length_stats(tow_surface.mesh);
     return seg_stats.mean;
 }

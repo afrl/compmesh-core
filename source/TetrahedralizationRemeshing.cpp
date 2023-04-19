@@ -600,13 +600,19 @@ void split_single_edge(const mesh::LocalIndex& edge_id,
     edges[edge_id][1] = new_v;
 
     auto tri_updates = detail::split_triangles_on_edge(edge_id, new_n_n_2_edge_id, t);
-    assert(check_tri_edge_relations(t));
+    if (GlobalOptions::get().check_common_errors)
+    {
+        assert(check_tri_edge_relations(t));
+    }
 
     auto tet_updates =
       detail::update_tetrahedra_on_split_edge(edge_id, new_n_n_2_edge_id, tri_updates, t);
-    assert(check_tet_edge_relations(t));
-    assert(check_tri_edge_relations(t));
-    assert(check_tet_tri_relations(t));
+    if (GlobalOptions::get().check_common_errors)
+    {
+        assert(check_tet_edge_relations(t));
+        assert(check_tri_edge_relations(t));
+        assert(check_tet_tri_relations(t));
+    }
 
     state.current_to_orig_edge_map.resize(state.current_to_orig_edge_map.size() +
                                             tri_updates.size() +
@@ -751,8 +757,9 @@ UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
                                   t,
                                   state);
 
-        auto m = extract_volume(t);
-        mesh::write_vtk(m, "volume_after_splitting_" + std::to_string(edges_to_split[i]) + ".vtk");
+        // auto m = extract_volume(t);
+        // mesh::write_vtk(m, "volume_after_splitting_" + std::to_string(edges_to_split[i]) +
+        // ".vtk");
     }
 
     return state.result;
