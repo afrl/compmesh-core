@@ -183,6 +183,7 @@ std::map<mesh::LocalIndex, TriangleNewEdgeInfo> split_triangles_on_edge(
 
         tri_updates[t_id] = { new_t_id, new_internal_edge_id, edge_aligned };
     }
+    assert(tri_to_edges_map.size() == triangles.size());
     return tri_updates;
 }
 
@@ -729,9 +730,14 @@ UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split, Te
     state.current_to_orig_tri_map.resize(t.triangles.size(), mesh::NOT_SET_LocalIndex);
     state.current_to_orig_tet_map.resize(t.tetrahedra.size(), mesh::NOT_SET_LocalIndex);
 
+    assert(t.tri_to_edges_map.size() == t.triangles.size());
+
     for (auto edge_id : edges_to_split)
     {
         detail::split_single_edge(edge_id, mesh::NOT_SET_LocalIndex, t, state);
+
+        //auto m = extract_volume(t);
+        //mesh::write_vtk(m, "volume_after_splitting_" + std::to_string(edge_id) + ".vtk");
     }
 
     return state.result;

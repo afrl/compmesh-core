@@ -1,4 +1,5 @@
 #pragma once
+#pragma once
 
 #include "Eigen/Eigen"
 #include "Tetrahedralization.h"
@@ -130,7 +131,7 @@ struct MarchingTetState2
     std::set<std::array<mesh::LocalIndex, 3>> unique_faces;
     /// Vertices created at split edges
     std::vector<std::array<double, 3>> split_edge_vertices;
-    /// Length of all vertices (uninitialized values take mesh::NOT_SET_LocalIndex)
+    /// Length of all edges (uninitialized values take mesh::NOT_SET_LocalIndex)
     /// Indicates where in split_edge_vertices to look for the vertex along the split edge.
     std::vector<mesh::LocalIndex> edge_to_split_edge_vertex_map;
 };

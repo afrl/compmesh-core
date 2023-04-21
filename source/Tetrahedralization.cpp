@@ -42,13 +42,16 @@ void write_debug_mesh_state_to_vtk(const Tetrahedralization& t, const std::strin
 
         mesh::MeshAssociatedData data;
 
-        data.add<mesh::DataFieldType::ELEMENT>(
-          mesh::DataField<mesh::LocalIndex>::cref("tri_to_tet_map",
-                                                  { "tet_1", "tet_2" },
-                                                  t.tri_to_tet_map[0].data(),
-                                                  t.tri_to_tet_map.size(),
-                                                  t.tri_to_tet_map[0].size()));
-
+        if (!t.tri_to_tet_map.empty())
+        {
+            data.add<mesh::DataFieldType::ELEMENT>(
+              mesh::DataField<mesh::LocalIndex>::cref("tri_to_tet_map",
+                                                      { "tet_1", "tet_2" },
+                                                      t.tri_to_tet_map[0].data(),
+                                                      t.tri_to_tet_map.size(),
+                                                      t.tri_to_tet_map[0].size()));
+        }
+        
         data.add<mesh::DataFieldType::ELEMENT>(
           mesh::DataField<mesh::LocalIndex>::cref("tri_to_edges_map",
                                                   { "edge_1", "edge_2", "edge_3" },

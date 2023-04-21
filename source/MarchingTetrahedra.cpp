@@ -1,6 +1,7 @@
 #include "comp_mesh_core/MarchingTetrahedra.h"
 
 #include "simple_math/Utility.h"
+#include "utility/Permutation.h"
 
 namespace composite_mesher
 {
@@ -24,7 +25,7 @@ struct LookupEntry
     std::array<VertexType, 4> vertex_types;
 };
 
-// Note: 0b11110001 = (int) 241, but not all cases are possible. 
+// Note: 0b11110001 = (int) 241, but not all cases are possible.
 using LookupTable = std::array<LookupEntry, 0b11110001>;
 
 inline auto get_cell_lookup_table_kernel()
@@ -499,7 +500,8 @@ void extended_marching_tets(const Eigen::MatrixXd& tet_vertices,
                 }
                 else if (cell_entry.vertex_types[i] == detail::VertexType::EXISTING_VERTEX)
                 {
-                    vertices_on_surface[i] = tet_connectivity(tet_index, cell_entry.intersected_edges[i]);
+                    vertices_on_surface[i] =
+                      tet_connectivity(tet_index, cell_entry.intersected_edges[i]);
                     state.is_existing_vertex_included[vertices_on_surface[i]] = true;
                 }
             }
@@ -742,7 +744,8 @@ void extended_marching_tets(const Tetrahedralization& t,
                     }
                     else if (cell_entry.vertex_types[i] == detail::VertexType::EXISTING_VERTEX)
                     {
-                        vertices_on_surface[i] = t.tetrahedra[tet_index][cell_entry.intersected_edges[i]];
+                        vertices_on_surface[i] =
+                          t.tetrahedra[tet_index][cell_entry.intersected_edges[i]];
                     }
                 }
 
@@ -750,30 +753,94 @@ void extended_marching_tets(const Tetrahedralization& t,
                 bool is_quad = cell_entry.intersected_edges[3] != -1;
                 if (is_quad)
                 {
-                    std::array<mesh::LocalIndex, 3> face_sorted = { vertices_on_surface[0],
-                                                                    vertices_on_surface[1],
-                                                                    vertices_on_surface[3] };
-                    std::sort(face_sorted.begin(), face_sorted.end());
-                    if (state.unique_faces.count(face_sorted) == 0)
-                    {
-                        state.unique_faces.insert(face_sorted);
-                        const std::array<mesh::LocalIndex, 3> face = { vertices_on_surface[0],
-                                                                       vertices_on_surface[1],
-                                                                       vertices_on_surface[3] };
-                        state.faces.push_back(std::make_pair(face, tet_index));
-                    }
+                    // Important details:
+                    // 1. The only type of intersection that results in a quad is if 4 edges are
+                    //    split.
+                    // 2. When the tetrahedralization is remeshed, we need a determinant and
+                    //    predictable pattern to use so that the remeshed tetrahedra will use the
+                    //    same diagonal as these triangles.
+                    // 3. If we split edges in the order of the corresponding split_edge_vertices
+                    //    indices, then the diagonal will always be between the two opposite edges
+                    //    that do not include the highest index (with one exception).
+                    // 4. There is an exceptional case to #3: if (0,2) or (1,3) happen to correspond
+                    //    to both the lowest and highest indices, then that edge will be the
+                    //    diagonal.
 
-                    face_sorted = { vertices_on_surface[1],
-                                    vertices_on_surface[2],
-                                    vertices_on_surface[3] };
-                    std::sort(face_sorted.begin(), face_sorted.end());
-                    if (state.unique_faces.count(face_sorted) == 0)
+                    std::vector<int> in(4);
+                    std::iota(in.begin(), in.end(), 0);
+                    auto p = utility::find_sorted_permutation(
+                      in,
+                      [&](const int& i, const int& j)
+                      {
+                          return state.edge_to_split_edge_vertex_map
+                                   [t.tet_to_edges_map[tet_index]
+                                                      [cell_entry.intersected_edges[i]]] <
+                                 state.edge_to_split_edge_vertex_map
+                                   [t.tet_to_edges_map[tet_index][cell_entry.intersected_edges[j]]];
+                      });
+                    auto index_of_max_edge_id = p[3];
+
+                    // If the diagonal should be between vertices_on_surface[1] and
+                    // vertices_on_surface[3]
+                    if (((index_of_max_edge_id == 0 || index_of_max_edge_id == 2) &&
+                         !((p[0] == 0 && p[3] == 2) || (p[0] == 2 && p[3] == 0))) ||
+                        (p[0] == 1 && p[3] == 3) || (p[0] == 3 && p[3] == 1))
                     {
-                        state.unique_faces.insert(face_sorted);
-                        const std::array<mesh::LocalIndex, 3> face = { vertices_on_surface[1],
-                                                                       vertices_on_surface[2],
-                                                                       vertices_on_surface[3] };
-                        state.faces.push_back(std::make_pair(face, tet_index));
+                        std::array<mesh::LocalIndex, 3> face_sorted = { vertices_on_surface[0],
+                                                                        vertices_on_surface[1],
+                                                                        vertices_on_surface[3] };
+                        std::sort(face_sorted.begin(), face_sorted.end());
+                        if (state.unique_faces.count(face_sorted) == 0)
+                        {
+                            state.unique_faces.insert(face_sorted);
+                            const std::array<mesh::LocalIndex, 3> face = { vertices_on_surface[0],
+                                                                           vertices_on_surface[1],
+                                                                           vertices_on_surface[3] };
+                            state.faces.push_back(std::make_pair(face, tet_index));
+                        }
+
+                        face_sorted = { vertices_on_surface[1],
+                                        vertices_on_surface[2],
+                                        vertices_on_surface[3] };
+                        std::sort(face_sorted.begin(), face_sorted.end());
+                        if (state.unique_faces.count(face_sorted) == 0)
+                        {
+                            state.unique_faces.insert(face_sorted);
+                            const std::array<mesh::LocalIndex, 3> face = { vertices_on_surface[1],
+                                                                           vertices_on_surface[2],
+                                                                           vertices_on_surface[3] };
+                            state.faces.push_back(std::make_pair(face, tet_index));
+                        }
+                    }
+                    // If the diagonal should be between vertices_on_surface[0] and
+                    // vertices_on_surface[2]
+                    else
+                    {
+                        std::array<mesh::LocalIndex, 3> face_sorted = { vertices_on_surface[0],
+                                                                        vertices_on_surface[2],
+                                                                        vertices_on_surface[3] };
+                        std::sort(face_sorted.begin(), face_sorted.end());
+                        if (state.unique_faces.count(face_sorted) == 0)
+                        {
+                            state.unique_faces.insert(face_sorted);
+                            const std::array<mesh::LocalIndex, 3> face = { vertices_on_surface[0],
+                                                                           vertices_on_surface[2],
+                                                                           vertices_on_surface[3] };
+                            state.faces.push_back(std::make_pair(face, tet_index));
+                        }
+
+                        face_sorted = { vertices_on_surface[0],
+                                        vertices_on_surface[1],
+                                        vertices_on_surface[2] };
+                        std::sort(face_sorted.begin(), face_sorted.end());
+                        if (state.unique_faces.count(face_sorted) == 0)
+                        {
+                            state.unique_faces.insert(face_sorted);
+                            const std::array<mesh::LocalIndex, 3> face = { vertices_on_surface[0],
+                                                                           vertices_on_surface[1],
+                                                                           vertices_on_surface[2] };
+                            state.faces.push_back(std::make_pair(face, tet_index));
+                        }
                     }
                 }
                 else
