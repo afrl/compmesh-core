@@ -4,8 +4,13 @@
 
 namespace composite_mesher
 {
+using ConnIndex = uint8_t;
+using Index     = uint32_t;
+using Marker    = uint32_t;
+using FacetID   = Marker;
+
 /// @brief A fast, safe hash for linear 2-node edges
-inline const uint64_t hash_linear_edge(const mesh::LocalIndex& v1, const mesh::LocalIndex& v2)
+inline const uint64_t hash_linear_edge(const Index& v1, const Index& v2)
 {
     if (v1 < v2)
     {

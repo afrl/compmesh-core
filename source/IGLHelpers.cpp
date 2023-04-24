@@ -1,5 +1,6 @@
 #include "comp_mesh_core/IGLHelpers.h"
 
+#include "igl/bfs_orient.h"
 #include "mesh/algorithms/Search.h"
 #include "simple_math/Utility.h"
 #include "utility/Hash.h"
@@ -32,6 +33,40 @@ IGLToMeshResult igl_to_mesh_kernel(const V& vertices, const M& triangles)
         {
             inserted_triangles[hash] = r.mesh.elements().size();
             r.mesh.elements().add(mesh::ElementType::T2D3N, conn);
+            r.element_to_origin_tris_map.push_back({ i });
+        }
+        else
+        {
+            r.element_to_origin_tris_map[find_iter->second].push_back(i);
+        }
+    }
+    return r;
+}
+
+
+template<typename V, typename M>
+IGLToTriangulationResult igl_to_tri_kernel(const V& vertices, const M& triangles)
+{
+    IGLToTriangulationResult r;
+    r.t.vertices.resize(vertices.rows());
+    for (auto i : utility::range(vertices.rows()))
+    {
+        r.t.vertices[i] = { vertices(i, 0), vertices(i, 1), vertices(i, 2) };
+    }
+    r.element_to_origin_tris_map.reserve(triangles.rows());
+    std::unordered_map<std::size_t, mesh::LocalIndex> inserted_triangles;
+    r.t.triangles.reserve(triangles.rows());
+    for (auto i : utility::range(triangles.rows()))
+    {
+        std::vector<Index> conn            = { static_cast<Index>(triangles(i, 0)),
+                                               static_cast<Index>(triangles(i, 1)),
+                                               static_cast<Index>(triangles(i, 2)) };
+        auto hash                          = utility::hash_sorted(conn);
+        auto find_iter                     = inserted_triangles.find(hash);
+        if (find_iter == inserted_triangles.end())
+        {
+            inserted_triangles[hash] = r.t.triangles.size();
+            r.t.triangles.push_back({ conn[0], conn[1], conn[2] });
             r.element_to_origin_tris_map.push_back({ i });
         }
         else
@@ -251,6 +286,12 @@ IGLToMeshResult igl_to_mesh(const Eigen::MatrixXd& vertices, const Eigen::Matrix
     return detail::igl_to_mesh_kernel(vertices, triangles);
 }
 
+IGLToTriangulationResult igl_to_triangulation(const Eigen::MatrixXd& vertices,
+                                              const Eigen::MatrixXi& triangles)
+{
+    return detail::igl_to_tri_kernel(vertices, triangles);
+}
+
 double igl_sq_distance(const IGLTriSurf& igl_surf, const mesh::Point& p)
 {
     Eigen::MatrixX3d point(1, 3);
@@ -339,5 +380,45 @@ IGLTetrahedralization mesh_to_igl_tet(const mesh::Mesh& m)
         }
     }
     return igl;
+}
+
+
+double signed_volume(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F)
+{
+    assert(F.cols() == 3);
+    assert(V.cols() == 3);
+    std::array<Eigen::RowVector3d, 4> t;
+    t[3]                = Eigen::RowVector3d::Zero(V.cols());
+    double volume_total = 0;
+    for (int f = 0; f < F.rows(); ++f)
+    {
+        for (int lv = 0; lv < F.cols(); ++lv)
+        {
+            t[lv] = V.row(F(f, lv));
+        }
+        double vol = (t[1] - t[0]).dot((t[2] - t[0]).cross(t[3] - t[0])) / 6.0;
+        volume_total += vol;
+    }
+    return -volume_total;
+}
+
+void orient_closed_surface(const Eigen::MatrixXd& V, Eigen::MatrixXi& F, bool positive)
+{
+    if ((positive ? 1 : -1) * signed_volume(V, F) < 0)
+    {
+        for (int f = 0; f < F.rows(); ++f)
+        {
+            F.row(f) = F.row(f).reverse().eval();
+        }
+    }
+}
+
+void orient_volume(const Eigen::MatrixXd& V, Eigen::MatrixXi& F)
+{
+    Eigen::MatrixXi F_tmp = F;
+    Eigen::VectorXi C;
+    igl::bfs_orient(F, F_tmp, C);
+    orient_closed_surface(V, F_tmp, true);
+    F = F_tmp;
 }
 }

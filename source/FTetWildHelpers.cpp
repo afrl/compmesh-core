@@ -32,7 +32,7 @@ mesh::Mesh tetrahedralize_ftetwild(const std::vector<mesh::Mesh>& objects_surfac
         }
     }
 
-    std::vector<Eigen::MatrixX3i> triangles_by_object(objects_surfaces.size());
+    std::vector<Eigen::MatrixXi> triangles_by_object(objects_surfaces.size());
     for (auto i : utility::range(objects_surfaces.size()))
     {
         auto& triangles = triangles_by_object[i];

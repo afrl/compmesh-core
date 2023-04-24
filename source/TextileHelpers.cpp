@@ -2,7 +2,6 @@
 
 #include "Eigen/Eigen"
 #include "comp_mesh_core/IGLHelpers.h"
-#include "igl/bfs_orient.h"
 #include "mesh/algorithms/IO.h"
 #include "mesh/algorithms/Manipulation.h"
 #include "mesh/algorithms/Polygons.h"
@@ -479,44 +478,6 @@ inline double tetra_signed_volume(const Eigen::RowVector3d& p1,
     return (p2 - p1).dot((p3 - p1).cross(p4 - p1)) / 6.0;
 }
 
-double signed_volume(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F)
-{
-    assert(F.cols() == 3);
-    assert(V.cols() == 3);
-    std::array<Eigen::RowVector3d, 4> t;
-    t[3]                = Eigen::RowVector3d::Zero(V.cols());
-    double volume_total = 0;
-    for (int f = 0; f < F.rows(); ++f)
-    {
-        for (int lv = 0; lv < F.cols(); ++lv)
-        {
-            t[lv] = V.row(F(f, lv));
-        }
-        double vol = (t[1] - t[0]).dot((t[2] - t[0]).cross(t[3] - t[0])) / 6.0;
-        volume_total += vol;
-    }
-    return -volume_total;
-}
-
-void orient_closed_surface(const Eigen::MatrixXd& V, Eigen::MatrixXi& F, bool positive)
-{
-    if ((positive ? 1 : -1) * signed_volume(V, F) < 0)
-    {
-        for (int f = 0; f < F.rows(); ++f)
-        {
-            F.row(f) = F.row(f).reverse().eval();
-        }
-    }
-}
-
-void orient_volume(const Eigen::MatrixXd& V, Eigen::MatrixXi& F)
-{
-    Eigen::MatrixXi F_tmp = F;
-    Eigen::VectorXi C;
-    igl::bfs_orient(F, F_tmp, C);
-    orient_closed_surface(V, F_tmp, true);
-    F = F_tmp;
-}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Definitions from header

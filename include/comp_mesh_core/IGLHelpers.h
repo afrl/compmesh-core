@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Tetrahedralization.h"
+#include "Triangulation.h"
 #include "igl/AABB.h"
 #include "mesh/Mesh.h"
 
@@ -55,6 +56,21 @@ IGLToMeshResult igl_to_mesh(const Eigen::MatrixXd& vertices, const Eigen::Matrix
 /// a Mesh, removing duplicates if any exist.
 IGLToMeshResult igl_to_mesh(const Eigen::MatrixXd& vertices, const Eigen::MatrixX3i& triangles);
 
+/// Simple return struct for igl_to_mesh, @see igl_to_mesh
+struct IGLToTriangulationResult
+{
+    /// Resulting mesh from IGL with duplicate triangles removed
+    Triangulation t;
+    /// A map from the output element in mesh to the corresponding list of original triangles, which
+    /// could be multiple due to duplicates.
+    std::vector<std::vector<Eigen::Index>> element_to_origin_tris_map;
+};
+
+/// @brief Converts the Eigen matrix-based reprsentation of a triangle surface mesh (used by IGL) to
+/// a Triangulation, removing duplicates if any exist.
+IGLToTriangulationResult igl_to_triangulation(const Eigen::MatrixXd& vertices,
+                                              const Eigen::MatrixXi& triangles);
+
 double igl_sq_distance(const IGLTriSurf& igl_surf, const mesh::Point& p);
 
 Eigen::Vector3d igl_closest_point(const IGLTriSurf& igl_surf, const Eigen::Vector3d& p);
@@ -70,4 +86,9 @@ void igl_closest_point_to_facet(const Eigen::MatrixX3d& vertices,
                                 Eigen::VectorXd& distances_to_surface);
 
 IGLTetrahedralization mesh_to_igl_tet(const mesh::Mesh& m);
+
+
+double signed_volume(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F);
+void orient_closed_surface(const Eigen::MatrixXd& V, Eigen::MatrixXi& F, bool positive);
+void orient_volume(const Eigen::MatrixXd& V, Eigen::MatrixXi& F);
 }
