@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Triangulation.h"
 #include "mesh/Defines.h"
 #include "mesh/Mesh.h"
 #include "utility/DynamicArray.h"
@@ -64,5 +65,8 @@ void write_debug_mesh_state_to_vtk(const Tetrahedralization& t, const std::strin
 bool check_tri_edge_relations(const Tetrahedralization& t);
 bool check_tet_edge_relations(const Tetrahedralization& t);
 bool check_tet_tri_relations(const Tetrahedralization& t);
+
+// TODO this may need to be to moved
+bool check_tri_edge_relations(const Triangulation& t);
 
 }

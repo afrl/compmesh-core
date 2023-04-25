@@ -51,7 +51,7 @@ void write_debug_mesh_state_to_vtk(const Tetrahedralization& t, const std::strin
                                                       t.tri_to_tet_map.size(),
                                                       t.tri_to_tet_map[0].size()));
         }
-        
+
         data.add<mesh::DataFieldType::ELEMENT>(
           mesh::DataField<mesh::LocalIndex>::cref("tri_to_edges_map",
                                                   { "edge_1", "edge_2", "edge_3" },
@@ -85,7 +85,8 @@ void write_debug_mesh_state_to_vtk(const Tetrahedralization& t, const std::strin
     }
 }
 
-bool check_tri_edge_relations(const Tetrahedralization& t)
+template<typename T>
+bool check_tri_edge_relations_kernel(const T& t)
 {
     auto& triangles        = t.triangles;
     auto& edges            = t.edges;
@@ -136,6 +137,16 @@ bool check_tri_edge_relations(const Tetrahedralization& t)
     }
 
     return true;
+}
+
+bool check_tri_edge_relations(const Triangulation& t)
+{
+    return check_tri_edge_relations_kernel(t);
+}
+
+bool check_tri_edge_relations(const Tetrahedralization& t)
+{
+    return check_tri_edge_relations_kernel(t);
 }
 
 bool check_tet_edge_relations(const Tetrahedralization& t)

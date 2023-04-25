@@ -1,4 +1,8 @@
-﻿#include "comp_mesh_core/TetrahedralizationRemeshing.h"
+﻿#include "comp_mesh_core/SplitEdges.h"
+
+#include "comp_mesh_core/GlobalOptions.h"
+#include "mesh/algorithms/IO.h"
+#include "simple_math/Utility.h"
 
 namespace composite_mesher
 {
@@ -29,10 +33,11 @@ struct TriangleNewEdgeInfo
 /// @returns Map from original triangle -> { new triangle, new internal edge }
 /// Note: the original triangle will always contain the first node of the original split edge,
 /// and the triangle will contain the second node of the original split edge.
+template<typename T>
 std::map<mesh::LocalIndex, TriangleNewEdgeInfo> split_triangles_on_edge(
   const mesh::LocalIndex& orig_edge_id,
   const mesh::LocalIndex& new_split_edge_id,
-  Tetrahedralization& t)
+  T& t)
 {
     const auto& edges_info = mesh::get_edge_info(mesh::ElementType::T2D3N);
 
@@ -564,75 +569,21 @@ TetrahedraUpdateResult update_tetrahedra_on_split_edge(
     return r;
 }
 
-/// @param edge_id - the index of the edge to split
-/// @param existing_vertex_id_for_split - the index of the vertex that has already been created for
-/// the split edge
-void split_single_edge(const mesh::LocalIndex& edge_id,
-                       const mesh::LocalIndex& existing_vertex_id_for_split,
-                       Tetrahedralization& t,
+void apply_tri_updates(const mesh::LocalIndex& new_vertex_id,
+                       const std::map<mesh::LocalIndex, TriangleNewEdgeInfo>& tri_updates,
                        UpdateState& state)
 {
-    using namespace simple_math::point_operators;
-
-    // Not allowed to split the same edge twice
-    assert(state.orig_edge_to_update_index[edge_id] == mesh::NOT_SET_LocalIndex);
-
-    auto& vertices = t.vertices;
-    auto& edges    = t.edges;
-
-    auto v_1 = edges[edge_id][0];
-    auto v_2 = edges[edge_id][1];
-    auto p_1 = vertices[v_1];
-    auto p_2 = vertices[v_2];
-
-    mesh::LocalIndex new_v = existing_vertex_id_for_split;
-    if (new_v == mesh::NOT_SET_LocalIndex)
-    {
-        new_v          = vertices.size();
-        auto mid_point = 0.5 * (p_1 + p_2);
-        vertices.push_back(mid_point);
-    }
-
-
-    // Create an ID for new_n->n_2, which is the new edge along the split edge
-    // (n_1->new_n takes the place of the existing edge)
-    auto new_n_n_2_edge_id = edges.size();
-    edges.push_back({ new_v, v_2 });
-    edges[edge_id][1] = new_v;
-
-    auto tri_updates = detail::split_triangles_on_edge(edge_id, new_n_n_2_edge_id, t);
-    if (GlobalOptions::get().check_common_errors)
-    {
-        assert(check_tri_edge_relations(t));
-    }
-
-    auto tet_updates =
-      detail::update_tetrahedra_on_split_edge(edge_id, new_n_n_2_edge_id, tri_updates, t);
-    if (GlobalOptions::get().check_common_errors)
-    {
-        assert(check_tet_edge_relations(t));
-        assert(check_tri_edge_relations(t));
-        assert(check_tet_tri_relations(t));
-    }
-
     state.current_to_orig_edge_map.resize(state.current_to_orig_edge_map.size() +
-                                            tri_updates.size() +
-                                            tet_updates.new_internal_edges.size(),
+                                            tri_updates.size(),
                                           mesh::NOT_SET_LocalIndex);
+
     for (auto update : tri_updates)
     {
         auto new_internal_edge_id = update.second.new_edge_id;
-        state.result.updated_edges.push_back(
-          { UpdatedEdgeInfo::NEW_EDGE, mesh::NOT_SET_LocalIndex, new_internal_edge_id, new_v });
-    }
-    for (auto update : tet_updates.new_internal_edges)
-    {
-        auto new_internal_edge_id = update.new_edge_id;
-        auto new_node_id          = update.new_node_id;
         state.result.updated_edges.push_back({ UpdatedEdgeInfo::NEW_EDGE,
                                                mesh::NOT_SET_LocalIndex,
                                                new_internal_edge_id,
-                                               new_node_id });
+                                               new_vertex_id });
     }
 
     state.current_to_orig_tri_map.resize(state.current_to_orig_tri_map.size() + tri_updates.size(),
@@ -673,7 +624,24 @@ void split_single_edge(const mesh::LocalIndex& edge_id,
             }
         }
     }
+}
 
+void apply_tet_updates(const TetrahedraUpdateResult& tet_updates, UpdateState& state)
+{
+
+    state.current_to_orig_edge_map.resize(state.current_to_orig_edge_map.size() +
+                                            tet_updates.new_internal_edges.size(),
+                                          mesh::NOT_SET_LocalIndex);
+
+    for (auto update : tet_updates.new_internal_edges)
+    {
+        auto new_internal_edge_id = update.new_edge_id;
+        auto new_node_id          = update.new_node_id;
+        state.result.updated_edges.push_back({ UpdatedEdgeInfo::NEW_EDGE,
+                                               mesh::NOT_SET_LocalIndex,
+                                               new_internal_edge_id,
+                                               new_node_id });
+    }
     state.current_to_orig_tet_map.resize(state.current_to_orig_tet_map.size() +
                                            tet_updates.original_to_new_tet_map.size(),
                                          mesh::NOT_SET_LocalIndex);
@@ -713,11 +681,128 @@ void split_single_edge(const mesh::LocalIndex& edge_id,
             }
         }
     }
+}
+
+/// @param edge_id - the index of the edge to split
+/// @param existing_vertex_id_for_split - the index of the vertex that has already been created for
+/// the split edge
+void split_single_edge(const mesh::LocalIndex& edge_id,
+                       const mesh::LocalIndex& existing_vertex_id_for_split,
+                       Tetrahedralization& t,
+                       UpdateState& state)
+{
+    using namespace simple_math::point_operators;
+
+    // Not allowed to split the same edge twice
+    assert(state.orig_edge_to_update_index[edge_id] == mesh::NOT_SET_LocalIndex);
+
+    auto& vertices = t.vertices;
+    auto& edges    = t.edges;
+
+    auto v_1 = edges[edge_id][0];
+    auto v_2 = edges[edge_id][1];
+    auto p_1 = vertices[v_1];
+    auto p_2 = vertices[v_2];
+
+    mesh::LocalIndex new_v = existing_vertex_id_for_split;
+    if (new_v == mesh::NOT_SET_LocalIndex)
+    {
+        new_v          = vertices.size();
+        auto mid_point = 0.5 * (p_1 + p_2);
+        vertices.push_back(mid_point);
+    }
+
+
+    // Create an ID for new_n->n_2, which is the new edge along the split edge
+    // (n_1->new_n takes the place of the existing edge)
+    auto new_n_n_2_edge_id = edges.size();
+    edges.push_back({ new_v, v_2 });
+    edges[edge_id][1] = new_v;
+
+    auto tri_updates = detail::split_triangles_on_edge(edge_id, new_n_n_2_edge_id, t);
+
+    if (GlobalOptions::get().check_common_errors)
+    {
+        assert(check_tri_edge_relations(t));
+    }
+
+    auto tet_updates =
+      detail::update_tetrahedra_on_split_edge(edge_id, new_n_n_2_edge_id, tri_updates, t);
+
+    if (GlobalOptions::get().check_common_errors)
+    {
+        assert(check_tet_edge_relations(t));
+        assert(check_tri_edge_relations(t));
+        assert(check_tet_tri_relations(t));
+    }
+
+
+    apply_tri_updates(new_v, tri_updates, state);
+    apply_tet_updates(tet_updates, state);
 
     return;
 }
 
+void split_single_edge(const mesh::LocalIndex& edge_id,
+                       const mesh::LocalIndex& existing_vertex_id_for_split,
+                       Triangulation& t,
+                       UpdateState& state)
+{
+    using namespace simple_math::point_operators;
+
+    // Not allowed to split the same edge twice
+    assert(state.orig_edge_to_update_index[edge_id] == mesh::NOT_SET_LocalIndex);
+
+    auto& vertices = t.vertices;
+    auto& edges    = t.edges;
+
+    auto v_1 = edges[edge_id][0];
+    auto v_2 = edges[edge_id][1];
+    auto p_1 = vertices[v_1];
+    auto p_2 = vertices[v_2];
+
+    mesh::LocalIndex new_v = existing_vertex_id_for_split;
+    if (new_v == mesh::NOT_SET_LocalIndex)
+    {
+        new_v          = vertices.size();
+        auto mid_point = 0.5 * (p_1 + p_2);
+        vertices.push_back(mid_point);
+    }
+
+
+    // Create an ID for new_n->n_2, which is the new edge along the split edge
+    // (n_1->new_n takes the place of the existing edge)
+    auto new_n_n_2_edge_id = edges.size();
+    edges.push_back({ new_v, v_2 });
+    edges[edge_id][1] = new_v;
+
+    auto tri_updates = detail::split_triangles_on_edge(edge_id, new_n_n_2_edge_id, t);
+
+    if (GlobalOptions::get().check_common_errors)
+    {
+        assert(check_tri_edge_relations(t));
+    }
+
+    apply_tri_updates(new_v, tri_updates, state);
+
+    return;
+}
+
+void update_triangulation_markers(const UpdateResult& update_result, Triangulation& t)
+{
+    t.tri_to_marker_map.resize(t.triangles.size(), NOT_SET_Marker);
+    for (auto& tri_update : update_result.updated_triangles)
+    {
+        auto& orig_marker = t.tri_to_marker_map[tri_update.orig_tri_id];
+        for (auto& new_tri_id : tri_update.new_tri_ids)
+        {
+            t.tri_to_marker_map[new_tri_id] = orig_marker;
+        }
+    }
+}
+
 } // end namespace detail
+
 
 UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split, Tetrahedralization& t)
 {
@@ -736,8 +821,8 @@ UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split, Te
     {
         detail::split_single_edge(edge_id, mesh::NOT_SET_LocalIndex, t, state);
 
-        //auto m = extract_volume(t);
-        //mesh::write_vtk(m, "volume_after_splitting_" + std::to_string(edge_id) + ".vtk");
+        // auto m = extract_volume(t);
+        // mesh::write_vtk(m, "volume_after_splitting_" + std::to_string(edge_id) + ".vtk");
     }
 
     return state.result;
@@ -769,5 +854,101 @@ UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
     }
 
     return state.result;
+}
+
+UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split, Triangulation& t)
+{
+    UpdateState state;
+    state.orig_edge_to_update_index.resize(t.edges.size(), mesh::NOT_SET_LocalIndex);
+    state.orig_tri_to_update_index.resize(t.triangles.size(), mesh::NOT_SET_LocalIndex);
+
+    state.current_to_orig_edge_map.resize(t.edges.size(), mesh::NOT_SET_LocalIndex);
+    state.current_to_orig_tri_map.resize(t.triangles.size(), mesh::NOT_SET_LocalIndex);
+
+    assert(t.tri_to_edges_map.size() == t.triangles.size());
+
+    for (auto edge_id : edges_to_split)
+    {
+        detail::split_single_edge(edge_id, mesh::NOT_SET_LocalIndex, t, state);
+
+        // auto m = extract_volume(t);
+        // mesh::write_vtk(m, "volume_after_splitting_" + std::to_string(edge_id) + ".vtk");
+    }
+
+    detail::update_triangulation_markers(state.result, t);
+
+    return state.result;
+}
+
+UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
+                         const std::vector<mesh::LocalIndex>& existing_vertices_for_split_edges,
+                         Triangulation& t)
+{
+    UpdateState state;
+    state.orig_edge_to_update_index.resize(t.edges.size(), mesh::NOT_SET_LocalIndex);
+    state.orig_tri_to_update_index.resize(t.triangles.size(), mesh::NOT_SET_LocalIndex);
+
+    state.current_to_orig_edge_map.resize(t.edges.size(), mesh::NOT_SET_LocalIndex);
+    state.current_to_orig_tri_map.resize(t.triangles.size(), mesh::NOT_SET_LocalIndex);
+
+    for (auto i : utility::indices(edges_to_split))
+    {
+        detail::split_single_edge(edges_to_split[i],
+                                  existing_vertices_for_split_edges[i],
+                                  t,
+                                  state);
+
+        // auto m = extract_volume(t);
+        // mesh::write_vtk(m, "volume_after_splitting_" + std::to_string(edges_to_split[i]) +
+        // ".vtk");
+    }
+
+    detail::update_triangulation_markers(state.result, t);
+
+    return state.result;
+}
+
+UpdateResult split_constrained_edges(Triangulation& t, SeamInfo& seams)
+{
+    std::vector<bool> is_node_on_seam(t.vertices.size(), false);
+    for (auto edge_id : seams.edges_on_seams)
+    {
+        auto n1_id             = t.edges[edge_id][0];
+        is_node_on_seam[n1_id] = true;
+        auto n2_id             = t.edges[edge_id][1];
+        is_node_on_seam[n2_id] = true;
+    }
+
+    std::vector<mesh::LocalIndex> edges_to_split;
+    for (auto edge_id : utility::indices(t.edges))
+    {
+        auto v_1                     = t.edges[edge_id][0];
+        auto v_2                     = t.edges[edge_id][1];
+        bool edge_points_constrained = is_node_on_seam[v_1] && is_node_on_seam[v_2];
+
+        if (edge_points_constrained && seams.edge_id_to_seam_id_map[edge_id] == NOT_SET_SeamID)
+        {
+            // The edge is not a seam (it is a free edge), so it should be split
+            edges_to_split.push_back(edge_id);
+        }
+    }
+    std::cout << "* split_constrained_edges - Splitting " << edges_to_split.size() << " edges."
+              << std::endl;
+
+    auto update_result = split_edges(edges_to_split, t);
+
+    // Split edges will update the Triangulation structure, but now update seam info
+    seams.edge_id_to_seam_id_map.resize(t.edges.size(), NOT_SET_SeamID);
+    for (auto& update : update_result.updated_edges)
+    {
+        if (update.update_type == UpdatedEdgeInfo::SUBDIVIDED_EDGE)
+        {
+            seams.edges_on_seams.push_back(update.new_edge_id);
+            seams.edge_id_to_seam_id_map[update.new_edge_id] =
+              seams.edge_id_to_seam_id_map[update.orig_edge_id];
+        }
+    }
+
+    return update_result;
 }
 }

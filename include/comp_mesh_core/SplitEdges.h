@@ -1,9 +1,8 @@
 ﻿#pragma once
 
-#include "comp_mesh_core/GlobalOptions.h"
-#include "comp_mesh_core/Tetrahedralization.h"
-#include "mesh/algorithms/IO.h"
-#include "simple_math/Utility.h"
+#include "Seams.h"
+#include "Tetrahedralization.h"
+#include "Triangulation.h"
 
 namespace composite_mesher
 {
@@ -41,6 +40,8 @@ struct UpdateResult
     std::vector<UpdatedTetrahedronInfo> updated_tetrahedra;
 };
 
+// Split edges for Tetrahedralizations
+
 /// @brief Splits all of the given edges in the tetrahedralization, subdividing edges, triangle
 /// faces, and tetrahedra as needed.
 UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
@@ -51,4 +52,35 @@ UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
 UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
                          const std::vector<mesh::LocalIndex>& existing_vertices_for_split_edges,
                          Tetrahedralization& t);
+
+// Split edges for Triangulations
+
+/// @brief Splits all of the given edges in the triangulation, subdividing edges and triangles
+/// as needed.
+UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split, Triangulation& t);
+
+/// @brief Splits all of the given edges in the triangulation, subdividing edges and triangles
+/// as needed but uses the given existing vertices for the split edge.
+UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
+                         const std::vector<mesh::LocalIndex>& existing_vertices_for_split_edges,
+                         Triangulation& t);
+
+/// @brief Split all edges for which the two vertices lie on any seam but the edge does not lie on a
+///        seam.
+///
+/// @note Is called by remove_interpenetrations
+///
+/// When a Triangulation is optimize, tangential smoothing creates problems if constrained edges
+/// exist.  So this is important to call before optimization.
+///
+/// For example, the edges e1 and e2 will be split:
+///             seam edge
+///             o-------o
+///            / \     /
+/// seam edge /   \e1 /e2
+///          /     \ /
+///         o-------o
+///         seam edge
+///
+UpdateResult split_constrained_edges(Triangulation& t, SeamInfo& seams);
 }

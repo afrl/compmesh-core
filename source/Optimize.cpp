@@ -4,11 +4,49 @@
 #include "comp_mesh_core/IGLHelpers.h"
 #include "mesh/algorithms/IO.h"
 #include "mesh/relations/NodeToElementMap.h"
+#include "simple_math/Utility.h"
 #include "utility/Hash.h"
 #include "utility/VectorSet.h"
 
 namespace composite_mesher
 {
+namespace detail
+{
+
+void write_seams(const mesh::Mesh& surface_mesh,
+                 const std::vector<std::array<Index, 2>>& edges,
+                 const Marker& n_seams,
+                 const std::vector<Marker>& edges_on_seams,
+                 const std::vector<Marker>& edge_id_to_seam_id_map,
+                 const std::string prefix  = "",
+                 const std::string postfix = "")
+{
+    mesh::Mesh seams;
+    for (auto& n : surface_mesh.nodes())
+    {
+        seams.nodes().add(n.point());
+    }
+
+    std::vector<Marker> seam_id;
+    for (auto edge_id : edges_on_seams)
+    {
+        seams.elements().add(mesh::ElementType::L1D2N, { edges[edge_id][0], edges[edge_id][1] });
+        seam_id.push_back(edge_id_to_seam_id_map[edge_id]);
+    }
+
+    mesh::MeshAssociatedData data;
+    data.add<mesh::DataFieldType::ELEMENT, Marker>(
+      mesh::DataField<Marker>::ref("seam_id", seam_id));
+
+    mesh::write_vtk(seams, prefix + "seams" + postfix + ".vtk", data);
+}
+}
+
+struct AdjacentNode
+{
+    Index node_id;
+    Index edge_id;
+};
 
 void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                                    const std::vector<std::array<mesh::LocalIndex, 2>>& edges,
@@ -17,9 +55,17 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                                    const std::vector<mesh::LocalIndex>& edge_id_to_seam_id_map,
                                    const bool allow_smoothing_on_seams)
 {
+    std::cout << "* optimize_tangential_smoothing - Starting iterative optimization" << std::endl;
+
     if (GlobalOptions::get().write_debug_meshes)
     {
         mesh::write_vtk(surface_mesh, GlobalOptions::get().output_dir + "/iteration_0.vtk");
+        detail::write_seams(surface_mesh,
+                            edges,
+                            n_seams,
+                            edges_on_seams,
+                            edge_id_to_seam_id_map,
+                            GlobalOptions::get().output_dir + "/iteration_0_");
     }
 
     // Count # of facets and seams
@@ -27,6 +73,13 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
 
     mesh::NodeToElementMap node_to_element_map;
     node_to_element_map.update(surface_mesh);
+
+    // Make a copy of the original node positions
+    std::vector<simple_math::Point> original_positions(surface_mesh.nodes().size());
+    for (auto n : surface_mesh.nodes())
+    {
+        original_positions[n.local_index()] = n.point();
+    }
 
     // Create a map from each feature to the nodes that compose them
     std::vector<std::vector<mesh::LocalIndex>> facet_id_to_node_id_map(n_facets);
@@ -41,8 +94,7 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
     std::vector<mesh::ComponentIndex> n_seam_elements_connected_to_node(surface_mesh.nodes().size(),
                                                                         0);
     std::vector<std::vector<mesh::LocalIndex>> seam_id_to_node_id_map(n_seams);
-    std::vector<std::vector<mesh::LocalIndex>> node_to_neighbor_nodes_on_seam(
-      surface_mesh.nodes().size());
+    std::vector<std::vector<AdjacentNode>> node_to_neighbors_on_seam(surface_mesh.nodes().size());
     for (auto feature_edge_id : edges_on_seams)
     {
         auto seam_id = edge_id_to_seam_id_map[feature_edge_id];
@@ -57,8 +109,8 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
         n_seam_elements_connected_to_node[n2_id]++;
         seam_id_to_node_id_map[seam_id].push_back(n2_id);
 
-        node_to_neighbor_nodes_on_seam[n1_id].push_back(n2_id);
-        node_to_neighbor_nodes_on_seam[n2_id].push_back(n1_id);
+        node_to_neighbors_on_seam[n1_id].push_back({ n2_id, feature_edge_id });
+        node_to_neighbors_on_seam[n2_id].push_back({ n1_id, feature_edge_id });
     }
 
     // Create a map from each node to the facets it should lie on
@@ -84,10 +136,27 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
         }
     }
 
+    // TODO build adjacency list for seam edges
+
     auto igl_facets = decompose_into_igl_facets(surface_mesh);
+
+    std::vector<uint32_t> is_node_on_seam_data(is_node_on_seam.size(), 0);
+    for (auto i : utility::indices(is_node_on_seam_data))
+    {
+        if (is_node_on_seam[i])
+        {
+            is_node_on_seam_data[i] = is_node_on_seam[i];
+        }
+    }
+
+    mesh::MeshAssociatedData data;
+    data.add<mesh::DataFieldType::NODE, uint32_t>(
+      mesh::DataField<uint32_t>::cref("is_on_seam", is_node_on_seam_data));
 
     for (auto iteration : utility::range(10))
     {
+        std::cout << "  - Starting iteration " << iteration << std::endl;
+
         std::vector<simple_math::Vector3D> updated_coords(surface_mesh.nodes().size(),
                                                           simple_math::Vector3D::Zero());
 
@@ -106,9 +175,9 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                         auto p1                 = surface_mesh.nodes()[n_id].coord();
 
                         // Loop over points on feature connected to n_id via an edge
-                        for (auto n2_id : node_to_neighbor_nodes_on_seam[n_id])
+                        for (auto neighbor : node_to_neighbors_on_seam[n_id])
                         {
-                            auto p2 = surface_mesh.nodes()[n2_id].coord();
+                            auto p2 = surface_mesh.nodes()[neighbor.node_id].coord();
 
                             simple_math::Vector3D midpoint = 0.5 * (p1 + p2);
                             double distance                = (p2 - p1).norm();
@@ -139,13 +208,6 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                         }
                     }
                 }
-            }
-
-            if (GlobalOptions::get().write_debug_meshes)
-            {
-                mesh::write_vtk(surface_mesh,
-                                GlobalOptions::get().output_dir + "/iteration_moved_seams_" +
-                                  std::to_string(iteration + 1) + ".vtk");
             }
         }
 
@@ -190,13 +252,6 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
             }
         }
 
-        if (GlobalOptions::get().write_debug_meshes)
-        {
-            mesh::write_vtk(surface_mesh,
-                            GlobalOptions::get().output_dir + "/iteration_moved_interfaces_" +
-                              std::to_string(iteration + 1) + ".vtk");
-        }
-
         // Update positions
         for (auto n_id : utility::range(surface_mesh.nodes().size()))
         {
@@ -215,13 +270,14 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
         {
             mesh::write_vtk(surface_mesh,
                             GlobalOptions::get().output_dir + "/iteration_preproject_" +
-                              std::to_string(iteration + 1) + ".vtk");
+                              std::to_string(iteration + 1) + ".vtk",
+                            data);
         }
 
         // Project nodes back to the facets they should lie on
         for (auto n_id : utility::range(surface_mesh.nodes().size()))
         {
-            if (!is_node_on_corner[n_id])
+            if (!is_node_on_corner[n_id] && !is_node_on_seam[n_id])
             {
                 simple_math::Vector3D new_point = surface_mesh.nodes()[n_id].coord();
                 for (auto& facet_id : node_id_to_input_facet_ids_map[n_id])
@@ -238,11 +294,87 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
             }
         }
 
+        // TODO project nodes on seams back to the seams
+        if (allow_smoothing_on_seams)
+        {
+            for (auto seam_id : utility::range(n_seams))
+            {
+                for (auto& n_id : seam_id_to_node_id_map[seam_id])
+                {
+                    if (!is_node_on_corner[n_id])
+                    {
+                        assert(node_to_neighbors_on_seam[n_id].size() == 2);
+                        auto p = surface_mesh.nodes()[n_id].point();
+
+                        auto& neighbor1 = node_to_neighbors_on_seam[n_id][0];
+                        auto result1    = simple_math::closest_point_on_line_segment(
+                          p,
+                          original_positions[edges[neighbor1.edge_id][0]],
+                          original_positions[edges[neighbor1.edge_id][1]]);
+
+                        auto& neighbor2 = node_to_neighbors_on_seam[n_id][1];
+                        auto result2    = simple_math::closest_point_on_line_segment(
+                          p,
+                          original_positions[edges[neighbor2.edge_id][0]],
+                          original_positions[edges[neighbor2.edge_id][1]]);
+
+                        Index curr_n_id    = n_id;
+                        auto curr_neighbor = neighbor1;
+                        auto curr_result   = result1;
+                        if (result2.distance < result1.distance)
+                        {
+                            // The point is closer to the second neighbor so start iterating that
+                            // direction instead of in the direction of the first neighbor.
+                            curr_neighbor = neighbor2;
+                            curr_result   = result2;
+                        }
+
+                        // Traverse the seam until an edge is reached that is farther away from the
+                        // point.
+                        while (true)
+                        {
+                            auto& next_neighbors = node_to_neighbors_on_seam[curr_neighbor.node_id];
+                            if (next_neighbors.size() > 2)
+                            {
+                                // We traversed until we encounted a corner, so just use the last
+                                // result
+                                break;
+                            }
+
+                            auto next_neighbor = next_neighbors[0];
+                            if (next_neighbors[0].node_id == curr_n_id)
+                            {
+                                next_neighbor = next_neighbors[1];
+                            }
+                            auto next_result = simple_math::closest_point_on_line_segment(
+                              p,
+                              original_positions[edges[next_neighbor.edge_id][0]],
+                              original_positions[edges[next_neighbor.edge_id][1]]);
+
+                            if (next_result.distance > curr_result.distance)
+                            {
+                                // The next segment is farther from the point than the last one, so
+                                // stop traversing the seam
+                                break;
+                            }
+
+                            curr_n_id     = curr_neighbor.node_id;
+                            curr_neighbor = next_neighbor;
+                            curr_result   = next_result;
+                        }
+
+                        surface_mesh.nodes()[n_id].point() = curr_result.closest_point;
+                    }
+                }
+            }
+        }
+
         if (GlobalOptions::get().write_debug_meshes)
         {
             mesh::write_vtk(surface_mesh,
                             GlobalOptions::get().output_dir + "/iteration_" +
-                              std::to_string(iteration + 1) + ".vtk");
+                              std::to_string(iteration + 1) + ".vtk",
+                            data);
         }
     }
 
@@ -446,8 +578,8 @@ void optimize_refinement(SurfaceMeshWithFeatures& feature_surface, const double&
     // Update interface information for the elements removed from collapsed segments that result
     // in two or less points.
     std::sort(collapse_result.elements_removed.begin(), collapse_result.elements_removed.end());
-    std::reverse(collapse_result.elements_removed.begin(), collapse_result.elements_removed.end());
-    for (auto& i : collapse_result.elements_removed)
+    std::reverse(collapse_result.elements_removed.begin(),
+    collapse_result.elements_removed.end()); for (auto& i : collapse_result.elements_removed)
     {
         feature_surface.triangle_id_to_input_facet_ids_map.erase(
           feature_surface.triangle_id_to_input_facet_ids_map.begin() + i);
@@ -789,7 +921,8 @@ mesh::Mesh tetrahedralize_via_direct_tetgen(const std::vector<bool>& is_facet_pl
                 }
             }
 
-            // Create structures to accelerate construction of the boundary loops of the interface
+            // Create structures to accelerate construction of the boundary loops of the
+            // interface
             std::vector<std::array<mesh::LocalIndex, 2>> unmatched_edges_vector;
             for (auto& key_value : unmatched_edges)
             {
@@ -825,8 +958,9 @@ mesh::Mesh tetrahedralize_via_direct_tetgen(const std::vector<bool>& is_facet_pl
             }
 
             // Build loops
-            // Note: if this is a performance bottleneck using associative containers, renumber the
-            // boundary nodes so that vectors can be used (keeping a map to the original indices).
+            // Note: if this is a performance bottleneck using associative containers, renumber
+            // the boundary nodes so that vectors can be used (keeping a map to the original
+            // indices).
             std::unordered_set<mesh::LocalIndex> visited_nodes;
             std::vector<std::vector<mesh::LocalIndex>> boundary_loops;
             while (visited_nodes.size() != boundary_node_adjacency_list.size())
@@ -853,7 +987,8 @@ mesh::Mesh tetrahedralize_via_direct_tetgen(const std::vector<bool>& is_facet_pl
                 } while (curr_node_index != start_node_index);
             }
 
-            // With the loop determine which direction each goes (true = outward, false = inward)
+            // With the loop determine which direction each goes (true = outward, false =
+            // inward)
             std::vector<bool> boundary_loops_outward_indicator(boundary_loops.size(), false);
             auto interface_normal = mesh::calc_polygon_unit_normal(
               m.elements()[interface_id_to_triangles_id_map[interface_id][0]]);
@@ -1088,7 +1223,8 @@ PLC feature_surface_to_plc(const SurfaceMeshWithFeatures& feature_surface,
                 }
             }
 
-            // Create structures to accelerate construction of the boundary loops of the interface
+            // Create structures to accelerate construction of the boundary loops of the
+            // interface
             std::vector<std::array<mesh::LocalIndex, 2>> unmatched_edges_vector;
             for (auto& key_value : unmatched_edges)
             {
@@ -1116,8 +1252,9 @@ PLC feature_surface_to_plc(const SurfaceMeshWithFeatures& feature_surface,
             PLCFacet facet;
 
             // Build loops
-            // Note: if this is a performance bottleneck using associative containers, renumber the
-            // boundary nodes so that vectors can be used (keeping a map to the original indices).
+            // Note: if this is a performance bottleneck using associative containers, renumber
+            // the boundary nodes so that vectors can be used (keeping a map to the original
+            // indices).
             std::unordered_set<mesh::LocalIndex> visited_nodes;
             while (visited_nodes.size() != boundary_node_adjacency_list.size())
             {
@@ -1143,7 +1280,8 @@ PLC feature_surface_to_plc(const SurfaceMeshWithFeatures& feature_surface,
                 } while (curr_node_index != start_node_index);
             }
 
-            // With the loop determine which direction each goes (true = outward, false = inward)
+            // With the loop determine which direction each goes (true = outward, false =
+            // inward)
             facet.is_boundary_loop_a_hole.resize(facet.boundary_loops.size());
             auto interface_normal = mesh::calc_polygon_unit_normal(
               m.elements()[interface_id_to_triangles_id_map[interface_id][0]]);
@@ -1197,8 +1335,8 @@ void plc_to_polygonal_surface(const PLC& plc,
     {
         auto& facet = plc.facets[facet_id];
 
-        // Define a normalized coordinate system that is 2D baed on the plane points of the first
-        // loop, which should be the same plane as other loops in this facet.
+        // Define a normalized coordinate system that is 2D baed on the plane points of the
+        // first loop, which should be the same plane as other loops in this facet.
         simple_math::Matrix3D transformation;
         {
             std::vector<simple_math::Point> loop_points;
@@ -1238,8 +1376,8 @@ void plc_to_polygonal_surface(const PLC& plc,
 
         // Transform coordinates to this normalized coordinate system
         std::vector<mesh::Point> transformed_points;
-        // Save the nodes' indices in the connectivity as markers so we can recover the nodes after
-        // triangulation
+        // Save the nodes' indices in the connectivity as markers so we can recover the nodes
+        // after triangulation
         std::vector<int> markers;
         double normalized_z_offset = 0.0;
         mesh::LocalIndex count     = 0;
