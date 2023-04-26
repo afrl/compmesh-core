@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mesh/Mesh.h"
+#include "Triangulation.h"
 
 namespace composite_mesher
 {
@@ -19,6 +20,7 @@ void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
                                const double mu                  = -0.331,
                                const int n_smoothing_iterations = 10);
 
+void optimize_edge_flips(Triangulation& t);
 /*
 // Approach #1
 
