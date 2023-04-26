@@ -156,7 +156,7 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
 
     for (auto iteration : utility::range(10))
     {
-        std::cout << "  - Starting iteration " << iteration << std::endl;
+        std::cout << " - Starting iteration " << iteration << std::endl;
 
         std::vector<simple_math::Vector3D> updated_coords(surface_mesh.nodes().size(),
                                                           simple_math::Vector3D::Zero());
@@ -295,7 +295,7 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
             }
         }
 
-        // TODO project nodes on seams back to the seams
+        // Project nodes on seams back to the seams
         if (allow_smoothing_on_seams)
         {
             for (auto seam_id : utility::range(n_seams))
@@ -369,6 +369,18 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                 }
             }
         }
+
+
+        // Calculate how much each node was nominally moved (before projections)
+        simple_math::Vector3D avg_update = simple_math::Vector3D::Zero();
+        for (auto n_id : utility::range(surface_mesh.nodes().size()))
+        {
+            for (auto j : utility::range(3))
+            {
+                avg_update(j) += (updated_coords[n_id][j] - avg_update(j)) / (double)(n_id + 1);
+            }
+        }
+        std::cout << "   Vertices moved an average of " << avg_update.norm() << std::endl;
 
         if (GlobalOptions::get().write_debug_meshes)
         {
@@ -535,8 +547,9 @@ int find_external_vertex_valence(const Triangulation& t,
     return vertex_valences[t.triangles[tri_id][i]];
 }
 
-// Returns 0 if aligned and 1 if not aligned
+// Returns 0 if aligned and 1 if not aligned if t1 and the opposite if t2 (not t1).
 int get_aligned_case(const Triangulation& t,
+                     const bool& is_t1,
                      const Index& tri_id,
                      const Index& edge_id,
                      const int& edge_position)
@@ -544,11 +557,25 @@ int get_aligned_case(const Triangulation& t,
     auto edge_info = mesh::get_edge_info(mesh::ElementType::T2D3N);
     if (t.edges[edge_id][0] == t.triangles[tri_id][edge_info[edge_position].connectivity[0]])
     {
-        return 0;
+        if (is_t1)
+        {
+            return 0;
+        }
+        else
+        {
+            return 1;
+        }
     }
     else if (t.edges[edge_id][1] == t.triangles[tri_id][edge_info[edge_position].connectivity[0]])
     {
-        return 1;
+        if (is_t1)
+        {
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
     }
     else
     {
@@ -596,20 +623,21 @@ void flip_edge(Triangulation& t, const Index& edge_to_flip_id)
     //   t1 conn   { 2, 3, 0 }         { 0, 3, 2 }
     //   t1 edges { e2, e3, e }       { e3, e2, e }
     //
-    // Note: maps for t2 transformation is same as t1! For posterity:
+    // Note: maps for t2 transformation is same as t1, just reverse which is used for
+    // aligned/unaligned cases. get_aligned_case adjusts for the reversal.
     //
     // Case edge is position 0:
-    //           Aligned w/ Edge    Not Aligned w/ Edge
+    //         Not Aligned w/ Edge    Aligned w/ Edge
     //   t2 conn   { 2, 0, 1 }          { 0, 2, 1 }
     //   t2 edges { e, e0, e1 }        { e, e1, e0 }
     //
     // Case edge is position 1:
-    //           Aligned w/ Edge    Not Aligned w/ Edge
+    //         Not Aligned w/ Edge    Aligned w/ Edge
     //   t2 conn   { 1, 2, 0 }          { 1, 0, 2 }
     //   t2 edges { e1, e, e0 }        { e0, e, e1 }
     //
     // Case edge is position 2:
-    //           Aligned w/ Edge    Not Aligned w/ Edge
+    //         Not Aligned w/ Edge    Aligned w/ Edge
     //   t2 conn   { 0, 1, 2 }         { 2, 1, 0 }
     //   t2 edges { e0, e1, e }       { e1, e0, e }
 
@@ -623,26 +651,26 @@ void flip_edge(Triangulation& t, const Index& edge_to_flip_id)
     };
     // Indicates the position of e2 in t1 or e0 in t2 (before the flip)
     static int ext_e_pos[2][3] = { {
-                                     // triangle is aligned with edge
+                                     // t1 is aligned with edge
                                      1, // case 0
                                      2, // case 1
                                      0  // case 2
                                    },
                                    {
-                                     // triangle is not aligned with edge
+                                     // t1 is not aligned with edge
                                      2, // case 0
                                      0, // case 1
                                      1  // case 2
                                    } };
     // Indicates the position of e3 in t1 or e1 in t2 (before the flip)
     static int reused_e_pos[2][3] = { {
-                                        // triangle is aligned with edge
+                                        // t1 is aligned with edge
                                         2, // case 0
                                         0, // case 1
                                         1  // case 2
                                       },
                                       {
-                                        // triangle is not aligned with edge
+                                        // t2 is not aligned with edge
                                         1, // case 0
                                         2, // case 1
                                         0  // case 2
@@ -652,9 +680,9 @@ void flip_edge(Triangulation& t, const Index& edge_to_flip_id)
     auto& t2_id = connected_tris[1].first;
 
     const auto& t1_case = connected_tris[0].second;
-    auto t1_align_i     = get_aligned_case(t, t1_id, edge_to_flip_id, t1_case);
+    auto t1_align_i     = get_aligned_case(t, true, t1_id, edge_to_flip_id, t1_case);
     const auto& t2_case = connected_tris[1].second;
-    auto t2_align_i     = get_aligned_case(t, t2_id, edge_to_flip_id, t2_case);
+    auto t2_align_i     = get_aligned_case(t, false, t2_id, edge_to_flip_id, t2_case);
 
     auto v0_id = t.edges[edge_to_flip_id][0];
     auto v1_id = t.triangles[t2_id][ext_v_pos[t2_case]];
@@ -698,23 +726,23 @@ void flip_edge(Triangulation& t, const Index& edge_to_flip_id)
     else // not aligned
     {
         t.triangles[t1_id]        = { v3_id, v1_id, v2_id };
-        t.tri_to_edges_map[t2_id] = { edge_to_flip_id, e0_id, e3_id };
+        t.tri_to_edges_map[t1_id] = { edge_to_flip_id, e0_id, e3_id };
         replace_edge(edge_to_flip_id, t1_id, t1_id, 0);
         replace_edge(e0_id, t2_id, t1_id, 1);
         replace_edge(e3_id, t1_id, t1_id, 2);
     }
     // Update for tri 2
-    if (t2_align_i == 0) // aligned
+    if (t2_align_i == 0) // not aligned, pointing out of plane of figure
     {
-        t.triangles[t2_id]        = { v1_id, v3_id, v2_id };
+        t.triangles[t2_id]        = { v3_id, v1_id, v2_id };
         t.tri_to_edges_map[t2_id] = { edge_to_flip_id, e1_id, e2_id };
         replace_edge(edge_to_flip_id, t2_id, t2_id, 0);
         replace_edge(e1_id, t2_id, t2_id, 1);
         replace_edge(e2_id, t1_id, t2_id, 2);
     }
-    else // not aligned
+    else // aligned, pointing into plane of figure
     {
-        t.triangles[t2_id]        = { v3_id, v1_id, v0_id };
+        t.triangles[t2_id]        = { v1_id, v3_id, v2_id };
         t.tri_to_edges_map[t2_id] = { edge_to_flip_id, e2_id, e1_id };
         replace_edge(edge_to_flip_id, t2_id, t2_id, 0);
         replace_edge(e2_id, t1_id, t2_id, 1);
@@ -723,7 +751,7 @@ void flip_edge(Triangulation& t, const Index& edge_to_flip_id)
 }
 }
 
-void optimize_edge_flips(Triangulation& t)
+void optimize_edge_flips(Triangulation& t, const int n_passes)
 {
     check_tri_edge_relations(t);
 
@@ -738,97 +766,129 @@ void optimize_edge_flips(Triangulation& t)
         node_to_edge_map[edge[0]].push_back(edge_id);
     }
 
+    std::cout << "* optimize_edge_flips - Starting edge flips, current max valence is "
+              << *std::max_element(vertex_valences.begin(), vertex_valences.end()) << std::endl;
 
-    // Find the permutation that sorts the nodes from highest to lowest valence.
-    // In other words, sorted_permutation[0] is the node ID with highest.
-    auto sorted_permutation = utility::find_sorted_permutation(vertex_valences);
-    std::reverse(sorted_permutation.begin(), sorted_permutation.end());
-
-    // Fig 1. Example that will be used for comments in this function
-    //
-    //   nodes      edges    triangles
-    // 6---7---8  o---o---o  o---o---o
-    // |\  |  /|  |\  |  /|  |\ 5|6 /|
-    // | \ | / |  | 5 6 7 |  | \ | / |
-    // |  \|/  |  |  \|/  |  |4 \|/ 7|
-    // 5---0---1  o-4-o-0-o  o---o---o
-    // |  /|\  |  |  /|\  |  |3 /|\ 0|
-    // | / | \ |  | 3 2 1 |  | / | \ |
-    // |/  |  \|  |/  |  \|  |/ 2|1 \|
-    // 4---3---2  o---o---o  o---o---o
-    //
-
-    // Iterate until all vertices with valence higher than 7 have been visited
-    std::size_t curr_i = 0;
-    while (vertex_valences[sorted_permutation[curr_i]] > 7)
+    for (auto pass : utility::range(n_passes))
     {
-        auto v_id      = sorted_permutation[curr_i];
-        auto& v_valence = vertex_valences[v_id];
+        // Find the permutation that sorts the nodes from highest to lowest valence.
+        // In other words, sorted_permutation[0] is the node ID with highest.
+        auto sorted_permutation = utility::find_sorted_permutation(vertex_valences);
+        std::reverse(sorted_permutation.begin(), sorted_permutation.end());
 
-        // Let "external nodes" for a given edge be the corner nodes of the triangles connected to
-        // the edge that are not in the edge.  For Fig 1, if v_id=0, then 1 and 7 are the external
-        // nodes for edge 7.
+        auto pass_start_max_valence = vertex_valences[sorted_permutation[0]];
+
+        // Fig 1. Example that will be used for comments in this function
         //
-        // Find the max valence of the external nodes for each edge, since we want to flip edge that
-        // have a low "max external valence".
-        auto& connected_edges = node_to_edge_map[v_id];
-        std::vector<int> initial_max_external_valences(v_valence, 1000);
-        std::vector<std::array<Index, 2>> external_vertices(v_valence, { 0, 0 });
-        std::vector<bool> is_connected_edge_locked(v_valence, false);
-        for (auto i : utility::range(connected_edges.size()))
-        {
-            auto& edge_id = connected_edges[i];
-            auto& edge    = t.edges[edge_id];
+        //   nodes      edges    triangles
+        // 6---7---8  o---o---o  o---o---o
+        // |\  |  /|  |\  |  /|  |\ 5|6 /|
+        // | \ | / |  | 5 6 7 |  | \ | / |
+        // |  \|/  |  |  \|/  |  |4 \|/ 7|
+        // 5---0---1  o-4-o-0-o  o---o---o
+        // |  /|\  |  |  /|\  |  |3 /|\ 0|
+        // | / | \ |  | 3 2 1 |  | / | \ |
+        // |/  |  \|  |/  |  \|  |/ 2|1 \|
+        // 4---3---2  o---o---o  o---o---o
+        //
 
-            // Do not modify an edge that is connected to more than 2 triangles or triangles with
-            // different markers (since we would flip an edge on a seam).
-            if (t.edge_to_tris_map[edge_id].size() > 2 ||
-                t.tri_to_marker_map[t.edge_to_tris_map[edge_id][0].first] !=
-                  t.tri_to_marker_map[t.edge_to_tris_map[edge_id][1].first])
+        // Iterate until all vertices with valence higher than 7 have been visited
+        std::size_t curr_i = 0;
+        while (vertex_valences[sorted_permutation[curr_i]] > 7)
+        {
+            auto v_id       = sorted_permutation[curr_i];
+            auto& v_valence = vertex_valences[v_id];
+
+            // Let "external nodes" for a given edge be the corner nodes of the triangles connected
+            // to the edge that are not in the edge.  For Fig 1, if v_id=0, then 1 and 7 are the
+            // external nodes for edge 7.
+            //
+            // Find the max valence of the external nodes for each edge, since we want to flip edge
+            // that have a low "max external valence".
+            auto orig_connected_edges = node_to_edge_map[v_id];
+            std::vector<int> initial_max_external_valences(v_valence, 1000);
+            std::vector<std::array<Index, 2>> external_vertices(v_valence, { 0, 0 });
+            std::vector<bool> is_connected_edge_locked(v_valence, false);
+            for (auto i : utility::range(orig_connected_edges.size()))
             {
-                is_connected_edge_locked[i] = true;
-                continue;
+                auto& edge_id = orig_connected_edges[i];
+                auto& edge    = t.edges[edge_id];
+
+                // Do not modify an edge that is connected to more than 2 triangles or triangles
+                // with different markers (since we would flip an edge on a seam).
+                if (t.edge_to_tris_map[edge_id].size() > 2 ||
+                    t.tri_to_marker_map[t.edge_to_tris_map[edge_id][0].first] !=
+                      t.tri_to_marker_map[t.edge_to_tris_map[edge_id][1].first])
+                {
+                    is_connected_edge_locked[i] = true;
+                    continue;
+                }
+
+                auto& t1_id = t.edge_to_tris_map[edge_id][0].first;
+                auto i_1    = detail::find_external_vertex_position(t, t1_id, edge_id);
+
+                auto& t2_id = t.edge_to_tris_map[edge_id][1].first;
+                auto i_2    = detail::find_external_vertex_position(t, t2_id, edge_id);
+
+                external_vertices[i] = { t.triangles[t1_id][i_1], t.triangles[t2_id][i_2] };
+
+                initial_max_external_valences[i] =
+                  std::min(vertex_valences[external_vertices[i][0]],
+                           vertex_valences[external_vertices[i][1]]);
             }
 
-            auto& t1_id = t.edge_to_tris_map[edge_id][0].first;
-            auto i_1    = detail::find_external_vertex_position(t, t1_id, edge_id);
-
-            auto& t2_id = t.edge_to_tris_map[edge_id][1].first;
-            auto i_2    = detail::find_external_vertex_position(t, t2_id, edge_id);
-
-            external_vertices[i] = { t.triangles[t1_id][i_1], t.triangles[t2_id][i_2] };
-
-            initial_max_external_valences[i] = std::min(vertex_valences[external_vertices[i][0]],
-                                                        vertex_valences[external_vertices[i][1]]);
-        }
-
-        // Permutation that sorts the neighbors from those with the lowest "max external valence" to
-        // the highest. Note: their valences might change as edges are flipped (this is the
-        // permutation based on the initial values before any flips).
-        auto neighbor_sorted_p = utility::find_sorted_permutation(initial_max_external_valences);
-        for (auto i : utility::range(connected_edges.size()))
-        {
-            auto& sorted_i = neighbor_sorted_p[i];
-            auto& edge_id  = connected_edges[sorted_i];
-
-            // If the current vertex has a higher valence than both the external nodes of the
-            // currently considered edge and the edge is not locked, then flip the edge.
-            // Note: use the up-to-date valences.
-            if (v_valence > vertex_valences[external_vertices[sorted_i][0]] + 1 &&
-                v_valence > vertex_valences[external_vertices[sorted_i][1]] + 1 &&
-                !is_connected_edge_locked[sorted_i])
+            // Permutation that sorts the neighbors from those with the lowest "max external
+            // valence" to the highest. Note: their valences might change as edges are flipped (this
+            // is the permutation based on the initial values before any flips).
+            auto neighbor_sorted_p =
+              utility::find_sorted_permutation(initial_max_external_valences);
+            for (auto i : utility::range(orig_connected_edges.size()))
             {
-                vertex_valences[t.edges[edge_id][0]]--;
-                vertex_valences[t.edges[edge_id][1]]--;
-                std::cout << "Flipping edge " << edge_id << std::endl;
-                detail::flip_edge(t, edge_id); // changes connectivity of edge
-                vertex_valences[t.edges[edge_id][0]]++;
-                vertex_valences[t.edges[edge_id][1]]++;
-                check_tri_edge_relations(t);
+                auto& sorted_i = neighbor_sorted_p[i];
+                auto edge_id   = orig_connected_edges[sorted_i];
+
+                // If the current vertex has a higher valence than both the external nodes of the
+                // currently considered edge and the edge is not locked, then flip the edge.
+                // Note: use the up-to-date valences.
+                if (v_valence > vertex_valences[external_vertices[sorted_i][0]] + 1 &&
+                    v_valence > vertex_valences[external_vertices[sorted_i][1]] + 1 &&
+                    !is_connected_edge_locked[sorted_i])
+                {
+                    auto orig_edge = t.edges[edge_id];
+                    detail::flip_edge(t, edge_id); // changes connectivity of edge
+
+                    // Update valences
+                    vertex_valences[orig_edge[0]]--;
+                    vertex_valences[orig_edge[1]]--;
+                    vertex_valences[t.edges[edge_id][0]]++;
+                    vertex_valences[t.edges[edge_id][1]]++;
+
+                    // Update node-to-edge map
+                    node_to_edge_map[orig_edge[0]].remove_value(edge_id);
+                    node_to_edge_map[orig_edge[1]].remove_value(edge_id);
+                    node_to_edge_map[t.edges[edge_id][0]].push_back(edge_id);
+                    node_to_edge_map[t.edges[edge_id][1]].push_back(edge_id);
+                }
             }
+
+            // auto max_iter = std::max_element(vertex_valences.begin(), vertex_valences.end());
+            // std::cout << " - Flipped edges for v " << v_id << " max valence is " << *max_iter
+            //           << " (at v " << std::distance(vertex_valences.begin(), max_iter) << ")"
+            //           << std::endl;
+
+            curr_i++;
         }
 
-        curr_i++;
+        auto pass_end_max_valence =
+          *std::max_element(vertex_valences.begin(), vertex_valences.end());
+        auto pass_valence_reduction = pass_start_max_valence - pass_end_max_valence;
+        std::cout << " - Pass " << pass << " reduced max valence by " << pass_valence_reduction
+                  << " to " << pass_end_max_valence << std::endl;
+        if (pass_valence_reduction == 0)
+        {
+            std::cout << " - Stopping since valence was not reduced in last pass." << std::endl;
+            break;
+        }
     }
 }
 

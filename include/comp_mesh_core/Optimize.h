@@ -20,7 +20,7 @@ void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
                                const double mu                  = -0.331,
                                const int n_smoothing_iterations = 10);
 
-void optimize_edge_flips(Triangulation& t);
+void optimize_edge_flips(Triangulation& t, const int n_passes);
 /*
 // Approach #1
 
