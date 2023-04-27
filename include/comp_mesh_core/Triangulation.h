@@ -44,5 +44,7 @@ struct Triangulation
 /// - tri_to_edges_map
 void update_edges_and_maps(Triangulation& t);
 
+double query_mean_edge_length(const Triangulation& t);
+
 mesh::Mesh to_mesh(const Triangulation& t);
 }

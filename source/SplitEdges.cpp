@@ -932,7 +932,8 @@ UpdateResult split_constrained_edges(Triangulation& t, SeamInfo& seams)
             edges_to_split.push_back(edge_id);
         }
     }
-    std::cout << "* split_constrained_edges - Splitting " << edges_to_split.size() << " edges."
+    std::cout << GlobalOptions::get().curr_status_padding
+              << "* split_constrained_edges - Splitting " << edges_to_split.size() << " edges."
               << std::endl;
 
     auto update_result = split_edges(edges_to_split, t);
@@ -950,5 +951,57 @@ UpdateResult split_constrained_edges(Triangulation& t, SeamInfo& seams)
     }
 
     return update_result;
+}
+
+void split_large_edges(const double max_edge_length, Triangulation& t, SeamInfo& seams)
+{
+    /* Consider controlling the mean and std dev?
+    double mean_edge_length = 0.0;
+    for (auto i : utility::indices(t.edges))
+    {
+        auto& edge = t.edges[i];
+        auto length = simple_math::distance(t.vertices[edge[0]], t.vertices[edge[1]]);
+        mean_edge_length += (length - mean_edge_length) / (double)(i + 1);
+    }
+    */
+
+    std::cout << GlobalOptions::get().curr_status_padding
+              << "* split_large_edges - Splitting edges larger than " << max_edge_length
+              << std::endl;
+    while (true)
+    {
+        std::vector<mesh::LocalIndex> edges_to_split;
+        for (auto edge_id : utility::indices(t.edges))
+        {
+            auto& edge  = t.edges[edge_id];
+            auto length = simple_math::distance(t.vertices[edge[0]], t.vertices[edge[1]]);
+            if (length > max_edge_length)
+            {
+                edges_to_split.push_back(edge_id);
+            }
+        }
+        if (edges_to_split.size() == 0)
+        {
+            std::cout << GlobalOptions::get().curr_status_padding << " - Edges are shorter than the threshold" << std::endl;
+            break;
+        }
+
+        std::cout << GlobalOptions::get().curr_status_padding << " - Splitting "
+                  << edges_to_split.size() << " edges." << std::endl;
+
+        auto update_result = split_edges(edges_to_split, t);
+
+        // Split edges will update the Triangulation structure, but now update seam info
+        seams.edge_id_to_seam_id_map.resize(t.edges.size(), NOT_SET_SeamID);
+        for (auto& update : update_result.updated_edges)
+        {
+            if (update.update_type == UpdatedEdgeInfo::SUBDIVIDED_EDGE)
+            {
+                seams.edges_on_seams.push_back(update.new_edge_id);
+                seams.edge_id_to_seam_id_map[update.new_edge_id] =
+                  seams.edge_id_to_seam_id_map[update.orig_edge_id];
+            }
+        }
+    }
 }
 }

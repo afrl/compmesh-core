@@ -19,6 +19,8 @@ struct GlobalOptions
     bool write_debug_meshes = false;
     bool check_common_errors       = false;
 
+    std::string curr_status_padding = "";
+
   private:
     GlobalOptions() = default;
 };

@@ -58,11 +58,11 @@ IGLToTriangulationResult igl_to_tri_kernel(const V& vertices, const M& triangles
     r.t.triangles.reserve(triangles.rows());
     for (auto i : utility::range(triangles.rows()))
     {
-        std::vector<Index> conn            = { static_cast<Index>(triangles(i, 0)),
-                                               static_cast<Index>(triangles(i, 1)),
-                                               static_cast<Index>(triangles(i, 2)) };
-        auto hash                          = utility::hash_sorted(conn);
-        auto find_iter                     = inserted_triangles.find(hash);
+        std::vector<Index> conn = { static_cast<Index>(triangles(i, 0)),
+                                    static_cast<Index>(triangles(i, 1)),
+                                    static_cast<Index>(triangles(i, 2)) };
+        auto hash               = utility::hash_sorted(conn);
+        auto find_iter          = inserted_triangles.find(hash);
         if (find_iter == inserted_triangles.end())
         {
             inserted_triangles[hash] = r.t.triangles.size();
@@ -223,6 +223,63 @@ IGLTriSurf mesh_to_igl(const mesh::Mesh& m,
     return surf;
 }
 
+IGLTriSurf triagulation_to_igl(const Triangulation& t, const Marker& marker_to_extract)
+{
+    mesh::LocalIndex curr_index              = 0;
+    mesh::LocalIndex n_elements_in_component = 0;
+    std::vector<mesh::LocalIndex> m_to_c_node_map(t.vertices.size(),
+                                                  std::numeric_limits<mesh::LocalIndex>::max());
+    std::vector<mesh::LocalIndex> c_to_m_node_map;
+    c_to_m_node_map.reserve(t.vertices.size());
+    for (auto i : utility::indices(t.triangles))
+    {
+        if (t.tri_to_marker_map[i] == marker_to_extract)
+        {
+            n_elements_in_component++;
+            auto& conn = t.triangles[i];
+            assert(conn.size() == 3); // only works for triangles
+            for (auto i : utility::range(3))
+            {
+                if (m_to_c_node_map[conn[i]] == std::numeric_limits<mesh::LocalIndex>::max())
+                {
+                    m_to_c_node_map[conn[i]] = curr_index++;
+                    c_to_m_node_map.push_back(conn[i]);
+                }
+            }
+        }
+    }
+
+    IGLTriSurf surf;
+    surf.vertices.resize(curr_index, 3);
+    for (auto i : utility::indices(c_to_m_node_map))
+    {
+        auto& p = t.vertices[c_to_m_node_map[i]];
+        for (auto j : utility::range(3))
+        {
+            surf.vertices(i, j) = p[j];
+        }
+    }
+
+    curr_index = 0;
+    surf.triangles.resize(n_elements_in_component, 3);
+    for (auto i : utility::indices(t.triangles))
+    {
+        if (t.tri_to_marker_map[i] == marker_to_extract)
+        {
+            auto& conn = t.triangles[i];
+            for (auto i : utility::range(3))
+            {
+                surf.triangles(curr_index, i) = m_to_c_node_map[conn[i]];
+            }
+            curr_index++;
+        }
+    }
+
+    surf.tree.init(surf.vertices, surf.triangles);
+
+    return surf;
+}
+
 IGLTriSurf tetrahedralization_to_igl(const Tetrahedralization& t,
                                      const std::vector<mesh::LocalIndex>& triangles_to_extract)
 {
@@ -327,7 +384,7 @@ Eigen::Vector3d igl_closest_point(const IGLTriSurf& igl_surf, const Eigen::Vecto
     return closest_point.row(0);
 }
 
-std::vector<IGLTriSurf> decompose_into_igl_facets(mesh::Mesh combined_surface_mesh)
+std::vector<IGLTriSurf> decompose_into_igl_facets(const mesh::Mesh& combined_surface_mesh)
 {
     // Convert each facet of the input surfaces into triangle surfaces in IGL's format
     std::vector<IGLTriSurf> facet_id_to_igl_surface;
@@ -335,6 +392,18 @@ std::vector<IGLTriSurf> decompose_into_igl_facets(mesh::Mesh combined_surface_me
     {
         // Note: I am assuming that the components are repurposed for tracking the facets
         facet_id_to_igl_surface.push_back(mesh_to_igl(combined_surface_mesh, facet_id));
+    }
+    return facet_id_to_igl_surface;
+}
+
+std::vector<IGLTriSurf> decompose_into_igl_facets(const Triangulation& combined_surface_mesh)
+{
+    // Convert each facet of the input surfaces into triangle surfaces in IGL's format
+    std::vector<IGLTriSurf> facet_id_to_igl_surface;
+    auto n_facets = combined_surface_mesh.n_markers;
+    for (auto facet_id : utility::range(n_facets))
+    {
+        facet_id_to_igl_surface.push_back(triagulation_to_igl(combined_surface_mesh, facet_id));
     }
     return facet_id_to_igl_surface;
 }

@@ -2,6 +2,7 @@
 
 #include "comp_mesh_core/GlobalOptions.h"
 #include "comp_mesh_core/IGLHelpers.h"
+#include "comp_mesh_core/VertexMap.h"
 #include "mesh/algorithms/IO.h"
 #include "mesh/relations/NodeToElementMap.h"
 #include "simple_math/Utility.h"
@@ -13,6 +14,32 @@ namespace composite_mesher
 {
 namespace detail
 {
+
+void write_seams(const Triangulation& t,
+                 const SeamInfo& seam_info,
+                 const std::string prefix  = "",
+                 const std::string postfix = "")
+{
+    mesh::Mesh seams;
+    for (auto& p : t.vertices)
+    {
+        seams.nodes().add(p);
+    }
+
+    std::vector<Marker> seam_id;
+    for (auto edge_id : seam_info.edges_on_seams)
+    {
+        seams.elements().add(mesh::ElementType::L1D2N,
+                             { t.edges[edge_id][0], t.edges[edge_id][1] });
+        seam_id.push_back(seam_info.edge_id_to_seam_id_map[edge_id]);
+    }
+
+    mesh::MeshAssociatedData data;
+    data.add<mesh::DataFieldType::ELEMENT, Marker>(
+      mesh::DataField<Marker>::ref("seam_id", seam_id));
+
+    mesh::write_vtk(seams, prefix + "seams" + postfix + ".vtk", data);
+}
 
 void write_seams(const mesh::Mesh& surface_mesh,
                  const std::vector<std::array<Index, 2>>& edges,
@@ -41,13 +68,15 @@ void write_seams(const mesh::Mesh& surface_mesh,
 
     mesh::write_vtk(seams, prefix + "seams" + postfix + ".vtk", data);
 }
-}
 
 struct AdjacentNode
 {
     Index node_id;
     Index edge_id;
 };
+}
+
+
 
 void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                                    const std::vector<std::array<mesh::LocalIndex, 2>>& edges,
@@ -56,7 +85,8 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                                    const std::vector<mesh::LocalIndex>& edge_id_to_seam_id_map,
                                    const bool allow_smoothing_on_seams)
 {
-    std::cout << "* optimize_tangential_smoothing - Starting iterative optimization" << std::endl;
+    std::cout << GlobalOptions::get().curr_status_padding
+              << "* optimize_tangential_smoothing - Starting iterative optimization" << std::endl;
 
     if (GlobalOptions::get().write_debug_meshes)
     {
@@ -95,7 +125,8 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
     std::vector<mesh::ComponentIndex> n_seam_elements_connected_to_node(surface_mesh.nodes().size(),
                                                                         0);
     std::vector<std::vector<mesh::LocalIndex>> seam_id_to_node_id_map(n_seams);
-    std::vector<std::vector<AdjacentNode>> node_to_neighbors_on_seam(surface_mesh.nodes().size());
+    std::vector<std::vector<detail::AdjacentNode>> node_to_neighbors_on_seam(
+      surface_mesh.nodes().size());
     for (auto feature_edge_id : edges_on_seams)
     {
         auto seam_id = edge_id_to_seam_id_map[feature_edge_id];
@@ -156,7 +187,8 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
 
     for (auto iteration : utility::range(10))
     {
-        std::cout << " - Starting iteration " << iteration << std::endl;
+        std::cout << GlobalOptions::get().curr_status_padding << " - Starting iteration "
+                  << iteration << std::endl;
 
         std::vector<simple_math::Vector3D> updated_coords(surface_mesh.nodes().size(),
                                                           simple_math::Vector3D::Zero());
@@ -380,7 +412,8 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
                 avg_update(j) += (updated_coords[n_id][j] - avg_update(j)) / (double)(n_id + 1);
             }
         }
-        std::cout << "   Vertices moved an average of " << avg_update.norm() << std::endl;
+        std::cout << GlobalOptions::get().curr_status_padding << "   Vertices moved an average of "
+                  << avg_update.norm() << std::endl;
 
         if (GlobalOptions::get().write_debug_meshes)
         {
@@ -399,6 +432,372 @@ void optimize_tangential_smoothing(mesh::Mesh& surface_mesh,
     }
 }
 
+
+std::vector<mesh::ConnIndex> calculate_neighbor_counts(
+  const mesh::Mesh& surface_mesh,
+  const mesh::ComponentIndex& component_to_smooth,
+  const std::vector<bool>& is_node_constrained)
+{
+    std::vector<mesh::ConnIndex> neighbor_counts(surface_mesh.nodes().size());
+    for (auto surf_element : surface_mesh.elements())
+    {
+        if (surf_element.component_id() == component_to_smooth)
+        {
+            for (auto node : surf_element.nodes())
+            {
+                if (!is_node_constrained[node.local_index()])
+                {
+                    auto& c = neighbor_counts[node.local_index()];
+                    for (auto& node_2 : surf_element.nodes())
+                    {
+                        if (node != node_2)
+                        {
+                            c++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return neighbor_counts;
+}
+
+
+void optimize_tangential_smoothing(Triangulation& t,
+                                   const SeamInfo& seams,
+                                   const int n_iterations,
+                                   const bool allow_smoothing_on_seams)
+{
+    using namespace simple_math::point_operators;
+
+    std::cout << GlobalOptions::get().curr_status_padding
+              << "* optimize_tangential_smoothing - Starting iterative optimization" << std::endl;
+
+    if (GlobalOptions::get().write_debug_meshes)
+    {
+        mesh::write_vtk(to_mesh(t), GlobalOptions::get().output_dir + "/iteration_0.vtk");
+        detail::write_seams(t, seams, GlobalOptions::get().output_dir + "/iteration_0_");
+    }
+
+    // Count # of facets and seams
+    mesh::ComponentIndex n_facets =
+      *std::max_element(t.tri_to_marker_map.begin(), t.tri_to_marker_map.end()) + 1;
+
+    auto vert_to_tri_map = build_vert_to_tri_map(t);
+
+    // Make a copy of the original node positions
+    auto original_positions = t.vertices;
+
+    // Create a map from each feature to the nodes that compose them
+    std::vector<std::vector<mesh::LocalIndex>> facet_id_to_vert_id_map(n_facets);
+    for (auto v_id : utility::indices(t.vertices))
+    {
+        for (auto tri_id : vert_to_tri_map.get_indices(v_id))
+        {
+            facet_id_to_vert_id_map[t.tri_to_marker_map[tri_id]].push_back(v_id);
+        }
+    }
+    std::vector<bool> is_vert_on_seam(t.vertices.size(), false);
+    std::vector<mesh::ComponentIndex> n_seam_elements_connected_to_vert(t.vertices.size(), 0);
+    std::vector<std::vector<mesh::LocalIndex>> seam_id_to_vert_id_map(seams.n_seams);
+    std::vector<std::vector<detail::AdjacentNode>> vert_to_neighbors_on_seam(t.vertices.size());
+    for (auto feature_edge_id : seams.edges_on_seams)
+    {
+        auto seam_id = seams.edge_id_to_seam_id_map[feature_edge_id];
+
+        auto v1_id             = t.edges[feature_edge_id][0];
+        is_vert_on_seam[v1_id] = true;
+        n_seam_elements_connected_to_vert[v1_id]++;
+        seam_id_to_vert_id_map[seam_id].push_back(v1_id);
+
+        auto v2_id             = t.edges[feature_edge_id][1];
+        is_vert_on_seam[v2_id] = true;
+        n_seam_elements_connected_to_vert[v2_id]++;
+        seam_id_to_vert_id_map[seam_id].push_back(v2_id);
+
+        vert_to_neighbors_on_seam[v1_id].push_back({ v2_id, feature_edge_id });
+        vert_to_neighbors_on_seam[v2_id].push_back({ v1_id, feature_edge_id });
+    }
+
+    // Create a map from each node to the facets it should lie on
+    std::vector<utility::VectorSet<unsigned int>> vert_id_to_input_facet_ids_map(t.vertices.size());
+    for (auto tri_id : utility::indices(t.triangles))
+    {
+        for (auto v_id : t.triangles[tri_id])
+        {
+            vert_id_to_input_facet_ids_map[v_id].insert(t.tri_to_marker_map[tri_id]);
+        }
+    }
+
+    // Figure out which nodes are on a corner based on how many seam elements are connected to
+    // the node.  It is assumed that if it is greater than 2, then it a corner.
+    std::vector<bool> is_vert_on_corner(t.vertices.size(), false);
+    for (auto n_id : utility::indices(t.vertices))
+    {
+        if (n_seam_elements_connected_to_vert[n_id] > 2)
+        {
+            is_vert_on_corner[n_id] = true;
+        }
+    }
+
+    // TODO build adjacency list for seam edges
+
+    auto igl_facets = decompose_into_igl_facets(t);
+
+    std::vector<uint32_t> is_vert_on_seam_data(is_vert_on_seam.size(), 0);
+    for (auto i : utility::indices(is_vert_on_seam_data))
+    {
+        if (is_vert_on_seam[i])
+        {
+            is_vert_on_seam_data[i] = is_vert_on_seam[i];
+        }
+    }
+
+    mesh::MeshAssociatedData data;
+    data.add<mesh::DataFieldType::NODE, uint32_t>(
+      mesh::DataField<uint32_t>::cref("is_on_seam", is_vert_on_seam_data));
+
+    for (auto iteration : utility::range(n_iterations))
+    {
+        std::cout << GlobalOptions::get().curr_status_padding << " - Starting iteration "
+                  << iteration << std::endl;
+
+        std::vector<simple_math::Point> updated_coords(t.vertices.size());
+
+        if (allow_smoothing_on_seams)
+        {
+            for (auto seam_id : utility::range(seams.n_seams))
+            {
+                for (auto& v_id : seam_id_to_vert_id_map[seam_id])
+                {
+                    if (!is_vert_on_corner[v_id])
+                    {
+                        simple_math::Vector3D u  = simple_math::Vector3D::Zero();
+                        simple_math::Vector3D tv = simple_math::Vector3D::Zero();
+                        double edge_length_sums  = 0;
+                        int n_connected_edges    = 0;
+                        auto p1                  = simple_math::point_as_vector(t.vertices[v_id]);
+
+                        // Loop over points on feature connected to n_id via an edge
+                        for (auto neighbor : vert_to_neighbors_on_seam[v_id])
+                        {
+                            auto p2 = simple_math::point_as_vector(t.vertices[neighbor.node_id]);
+
+                            simple_math::Vector3D midpoint = 0.5 * (p1 + p2);
+                            double distance                = (p2 - p1).norm();
+                            edge_length_sums += distance;
+                            u += distance * midpoint;
+
+                            if (n_connected_edges == 0)
+                            {
+                                tv += (p2 - p1).normalized();
+                                n_connected_edges++;
+                            }
+                            else
+                            {
+                                n_connected_edges++;
+                                tv -= (p2 - p1).normalized();
+                            }
+                        }
+
+                        assert(n_connected_edges == 2);
+
+                        if (edge_length_sums > 0)
+                        { // to avoid overflow (i.e., edge_length_sums == 0)
+                            u /= edge_length_sums;
+                            u -= p1;
+                            tv                   = tv.normalized();
+                            u                    = tv * u.dot(tv);
+                            updated_coords[v_id] = simple_math::to_point(u);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (auto facet_id : utility::range(n_facets))
+        {
+            for (auto& v_id : facet_id_to_vert_id_map[facet_id])
+            {
+                if (!is_vert_on_corner[v_id] && !is_vert_on_seam[v_id])
+                {
+                    simple_math::Vector3D u = simple_math::Vector3D::Zero();
+                    double ww               = 0;
+                    int c                   = 0;
+                    auto p1                 = simple_math::point_as_vector(t.vertices[v_id]);
+
+                    for (auto tri_id : vert_to_tri_map.get_indices(v_id))
+                    {
+                        if (t.tri_to_marker_map[tri_id] == facet_id)
+                        {
+                            auto p1 =
+                              simple_math::point_as_vector(t.vertices[t.triangles[tri_id][0]]);
+                            auto p2 =
+                              simple_math::point_as_vector(t.vertices[t.triangles[tri_id][1]]);
+                            auto p3 =
+                              simple_math::point_as_vector(t.vertices[t.triangles[tri_id][2]]);
+                            auto avg  = (p1 + p2 + p3) / 3.0;
+                            auto area = (p2 - p1).cross(p3 - p1).norm();
+
+                            double w = area;
+                            ww += w;
+                            u += w * avg;
+                        }
+                    }
+
+                    if (ww > 0)
+                    { // to avoid overflow (i.e., ww == 0)
+                        u /= ww;
+                        u -= p1;
+                        // n = vnormal_[v];
+                        // u -= n * dot(u, n);
+                        updated_coords[v_id] = simple_math::to_point(u);
+                    }
+                }
+            }
+        }
+
+        // Update positions
+        for (auto v_id : utility::indices(t.vertices))
+        {
+            if (!is_vert_on_corner[v_id])
+            {
+                t.vertices[v_id] = t.vertices[v_id] + updated_coords[v_id];
+            }
+        }
+
+        if (GlobalOptions::get().write_debug_meshes)
+        {
+            mesh::write_vtk(to_mesh(t),
+                            GlobalOptions::get().output_dir + "/iteration_preproject_" +
+                              std::to_string(iteration + 1) + ".vtk",
+                            data);
+        }
+
+        // Project nodes back to the facets they should lie on
+        for (auto v_id : utility::indices(t.vertices))
+        {
+            if (!is_vert_on_corner[v_id] && !is_vert_on_seam[v_id])
+            {
+                simple_math::Vector3D new_point = simple_math::point_as_vector(t.vertices[v_id]);
+                for (auto& facet_id : vert_id_to_input_facet_ids_map[v_id])
+                {
+                    auto& igl_surface = igl_facets[facet_id];
+                    new_point         = igl_closest_point(igl_surface, new_point);
+                }
+
+                t.vertices[v_id] = simple_math::to_point(new_point);
+            }
+        }
+
+        // Project nodes on seams back to the seams
+        if (allow_smoothing_on_seams)
+        {
+            for (auto seam_id : utility::range(seams.n_seams))
+            {
+                for (auto& v_id : seam_id_to_vert_id_map[seam_id])
+                {
+                    if (!is_vert_on_corner[v_id])
+                    {
+                        assert(vert_to_neighbors_on_seam[v_id].size() == 2);
+                        auto p = t.vertices[v_id];
+
+                        auto& neighbor1 = vert_to_neighbors_on_seam[v_id][0];
+                        auto result1    = simple_math::closest_point_on_line_segment(
+                          p,
+                          original_positions[t.edges[neighbor1.edge_id][0]],
+                          original_positions[t.edges[neighbor1.edge_id][1]]);
+
+                        auto& neighbor2 = vert_to_neighbors_on_seam[v_id][1];
+                        auto result2    = simple_math::closest_point_on_line_segment(
+                          p,
+                          original_positions[t.edges[neighbor2.edge_id][0]],
+                          original_positions[t.edges[neighbor2.edge_id][1]]);
+
+                        Index curr_n_id    = v_id;
+                        auto curr_neighbor = neighbor1;
+                        auto curr_result   = result1;
+                        if (result2.distance < result1.distance)
+                        {
+                            // The point is closer to the second neighbor so start iterating that
+                            // direction instead of in the direction of the first neighbor.
+                            curr_neighbor = neighbor2;
+                            curr_result   = result2;
+                        }
+
+                        // Traverse the seam until an edge is reached that is farther away from the
+                        // point.
+                        while (true)
+                        {
+                            auto& next_neighbors = vert_to_neighbors_on_seam[curr_neighbor.node_id];
+                            if (next_neighbors.size() > 2)
+                            {
+                                // We traversed until we encounted a corner, so just use the last
+                                // result
+                                break;
+                            }
+
+                            auto next_neighbor = next_neighbors[0];
+                            if (next_neighbors[0].node_id == curr_n_id)
+                            {
+                                next_neighbor = next_neighbors[1];
+                            }
+                            auto next_result = simple_math::closest_point_on_line_segment(
+                              p,
+                              original_positions[t.edges[next_neighbor.edge_id][0]],
+                              original_positions[t.edges[next_neighbor.edge_id][1]]);
+
+                            if (next_result.distance > curr_result.distance)
+                            {
+                                // The next segment is farther from the point than the last one, so
+                                // stop traversing the seam
+                                break;
+                            }
+
+                            curr_n_id     = curr_neighbor.node_id;
+                            curr_neighbor = next_neighbor;
+                            curr_result   = next_result;
+                        }
+
+                        t.vertices[v_id] = curr_result.closest_point;
+                    }
+                }
+            }
+        }
+
+
+        // Calculate how much each node was nominally moved (before projections)
+        simple_math::Vector3D avg_update = simple_math::Vector3D::Zero();
+        for (auto n_id : utility::range(t.vertices.size()))
+        {
+            for (auto j : utility::range(3))
+            {
+                avg_update(j) += (updated_coords[n_id][j] - avg_update(j)) / (double)(n_id + 1);
+            }
+        }
+        std::cout << GlobalOptions::get().curr_status_padding << "   Vertices moved an average of "
+                  << avg_update.norm() << std::endl;
+
+        if (GlobalOptions::get().write_debug_meshes)
+        {
+            mesh::write_vtk(to_mesh(t),
+                            GlobalOptions::get().output_dir + "/iteration_" +
+                              std::to_string(iteration + 1) + ".vtk",
+                            data);
+        }
+    }
+
+
+    if (GlobalOptions::get().write_debug_meshes)
+    {
+        mesh::write_vtk(to_mesh(t),
+                        GlobalOptions::get().output_dir + "/post_tangential_smoothing.vtk");
+    }
+}
+
+namespace detail
+{
 
 std::vector<mesh::ConnIndex> calculate_neighbor_counts(
   const mesh::Mesh& surface_mesh,
@@ -470,7 +869,7 @@ void update_delta(const mesh::Mesh& surface_mesh,
         }
     }
 }
-
+}
 
 /// @see https://graphics.stanford.edu/courses/cs468-01-fall/Papers/taubin-smoothing.pdf
 void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
@@ -485,11 +884,11 @@ void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
     std::vector<simple_math::Vector3D> delta_v(surface_mesh.nodes().size());
     for (auto n : utility::range(n_smoothing_iterations))
     {
-        update_delta(surface_mesh,
-                     component_to_smooth,
-                     is_node_constrained,
-                     neighbor_counts,
-                     delta_v);
+        detail::update_delta(surface_mesh,
+                             component_to_smooth,
+                             is_node_constrained,
+                             neighbor_counts,
+                             delta_v);
         for (auto i : utility::range(delta_v.size()))
         {
             if (!is_node_constrained[i])
@@ -502,11 +901,11 @@ void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
             }
         }
 
-        update_delta(surface_mesh,
-                     component_to_smooth,
-                     is_node_constrained,
-                     neighbor_counts,
-                     delta_v);
+        detail::update_delta(surface_mesh,
+                             component_to_smooth,
+                             is_node_constrained,
+                             neighbor_counts,
+                             delta_v);
         for (auto i : utility::range(delta_v.size()))
         {
             if (!is_node_constrained[i])
@@ -766,7 +1165,8 @@ void optimize_edge_flips(Triangulation& t, const int n_passes)
         node_to_edge_map[edge[0]].push_back(edge_id);
     }
 
-    std::cout << "* optimize_edge_flips - Starting edge flips, current max valence is "
+    std::cout << GlobalOptions::get().curr_status_padding
+              << "* optimize_edge_flips - Starting edge flips, current max valence is "
               << *std::max_element(vertex_valences.begin(), vertex_valences.end()) << std::endl;
 
     for (auto pass : utility::range(n_passes))
@@ -816,7 +1216,7 @@ void optimize_edge_flips(Triangulation& t, const int n_passes)
 
                 // Do not modify an edge that is connected to more than 2 triangles or triangles
                 // with different markers (since we would flip an edge on a seam).
-                if (t.edge_to_tris_map[edge_id].size() > 2 ||
+                if (t.edge_to_tris_map[edge_id].size() != 2 ||
                     t.tri_to_marker_map[t.edge_to_tris_map[edge_id][0].first] !=
                       t.tri_to_marker_map[t.edge_to_tris_map[edge_id][1].first])
                 {
@@ -882,11 +1282,13 @@ void optimize_edge_flips(Triangulation& t, const int n_passes)
         auto pass_end_max_valence =
           *std::max_element(vertex_valences.begin(), vertex_valences.end());
         auto pass_valence_reduction = pass_start_max_valence - pass_end_max_valence;
-        std::cout << " - Pass " << pass << " reduced max valence by " << pass_valence_reduction
-                  << " to " << pass_end_max_valence << std::endl;
+        std::cout << GlobalOptions::get().curr_status_padding << " - Pass " << pass
+                  << " reduced max valence by " << pass_valence_reduction << " to "
+                  << pass_end_max_valence << std::endl;
         if (pass_valence_reduction == 0)
         {
-            std::cout << " - Stopping since valence was not reduced in last pass." << std::endl;
+            std::cout << GlobalOptions::get().curr_status_padding
+                      << " - Stopping since valence was not reduced in last pass." << std::endl;
             break;
         }
     }

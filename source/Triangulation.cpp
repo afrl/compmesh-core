@@ -4,6 +4,7 @@
 #include "mesh/algorithms/IO.h"
 #include "mesh/common/ElementTypes.h"
 #include "mesh/data/MeshAssociatedData.h"
+#include "simple_math/Utility.h"
 
 namespace composite_mesher
 {
@@ -56,6 +57,18 @@ void update_edges_and_maps(Triangulation& t)
             }
         }
     }
+}
+
+double query_mean_edge_length(const Triangulation& t)
+{
+    double mean_edge_length = 0.0;
+    for (auto k : utility::indices(t.edges))
+    {
+        auto& edge  = t.edges[k];
+        auto length = simple_math::distance(t.vertices[edge[0]], t.vertices[edge[1]]);
+        mean_edge_length += (length - mean_edge_length) / (double)(k + 1);
+    }
+    return mean_edge_length;
 }
 
 mesh::Mesh to_mesh(const Triangulation& t)

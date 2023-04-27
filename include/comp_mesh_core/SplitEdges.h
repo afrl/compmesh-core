@@ -83,4 +83,7 @@ UpdateResult split_edges(const std::vector<mesh::LocalIndex>& edges_to_split,
 ///         seam edge
 ///
 UpdateResult split_constrained_edges(Triangulation& t, SeamInfo& seams);
+
+/// @brief Splits edges until all edges are smaller than the given length.
+void split_large_edges(const double max_edge_length, Triangulation& t, SeamInfo& seams);
 }

@@ -491,6 +491,8 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
         throw _UTIL_MSG_EXCEPT("Cannot find file " + file_path);
     }
 
+    std::cout << " - Reading .ctw file: " << file_path << std::endl;
+
     VTMSTowMesh tow_surface;
     tow_surface.type = VTMSTowMesh::MeshType::POLY;
 
@@ -560,7 +562,7 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
               static_cast<ComponentIndex>(new_index);
             tow_surface.mesh.elements().back().component_id() =
               static_cast<ComponentIndex>(new_index);
-            std::cout << "Adding facet " << new_index << " for indicator " << facet_indicator
+            std::cout << " -   Adding facet " << new_index << " for indicator " << facet_indicator
                       << std::endl;
         }
         else

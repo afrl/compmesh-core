@@ -35,6 +35,8 @@ IGLTriSurf mesh_to_igl(const mesh::Mesh& m, const mesh::ComponentIndex& componen
 IGLTriSurf mesh_to_igl(const mesh::Mesh& m,
                        const std::vector<mesh::ComponentIndex>& components_to_extract);
 
+IGLTriSurf triagulation_to_igl(const Triangulation& t, const Marker& marker_to_extract);
+
 IGLTriSurf tetrahedralization_to_igl(const Tetrahedralization& t,
                                      const std::vector<mesh::LocalIndex>& triangles_to_extract);
 
@@ -78,7 +80,10 @@ Eigen::Vector3d igl_closest_point(const IGLTriSurf& igl_surf, const Eigen::Vecto
 /// Creates a list of the facets of the input surfaces the format used by IGL (including a
 /// hierarchical bounding-box tree for fast distance and projection operations).  This is used
 /// during optimizations to ensure nodes are projected back to the facets they should lie on.
-std::vector<IGLTriSurf> decompose_into_igl_facets(mesh::Mesh combined_surface_mesh);
+std::vector<IGLTriSurf> decompose_into_igl_facets(const mesh::Mesh& combined_surface_mesh);
+
+/// Same as the other decompose_into_igl_facets but for a Triangulation
+std::vector<IGLTriSurf> decompose_into_igl_facets(const Triangulation& combined_surface_mesh);
 
 void igl_closest_point_to_facet(const Eigen::MatrixX3d& vertices,
                                 const IGLTriSurf& igl_surf,
