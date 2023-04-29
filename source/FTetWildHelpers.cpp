@@ -54,16 +54,20 @@ mesh::Mesh tetrahedralize_ftetwild(const std::vector<mesh::Mesh>& objects_surfac
     params.is_quiet              = true;
     params.num_threads           = std::thread::hardware_concurrency();
 
+    Eigen::MatrixXd boundary_vertices;
+    Eigen::MatrixXi boundary_triangles;
+
     Eigen::MatrixXd verts_out;
     Eigen::MatrixXi tets_out;
-    std::vector<unsigned long long> attributes;
+    std::vector<int> attributes;
     floatTetWild::tetrahedralization(vertices_by_object,
                                      triangles_by_object,
+                                     boundary_vertices,
+                                     boundary_triangles,
                                      params,
                                      verts_out,
                                      tets_out,
-                                     attributes,
-                                     false);
+                                     attributes);
 
     //////////////////////////////////////////////////////////////////////////////////////
     // Extract volume information into our mesh data structure
