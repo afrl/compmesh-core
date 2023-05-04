@@ -52,7 +52,7 @@ VTMSTowMesh create_tow_surface(const int material_number,
                                const std::vector<double>& medials);
 
 /// @brief Takes a polygonal discretization of a tow's surface and transforms it into a
-/// quality triangulation of the tow's surface.
+///        quality triangulation of the tow's surface.
 /// @param tow_surface - polygonal surface mesh for a tow returned by read_vtms_ctw
 /// @returns Mean segment length
 double triangulate_tow_surface(VTMSTowMesh& tow_surface, const bool refine = true);

@@ -59,16 +59,33 @@ void update_edges_and_maps(Triangulation& t)
     }
 }
 
-double query_mean_edge_length(const Triangulation& t)
+EdgeLengthStats query_edge_length_stats(const Triangulation& t)
 {
-    double mean_edge_length = 0.0;
+    // See https://www.johndcook.com/blog/standard_deviation/
+    double mean     = 0.0;
+    double variance = 0.0;
+    double min      = std::numeric_limits<double>::max();
+    double max      = std::numeric_limits<double>::min();
     for (auto k : utility::indices(t.edges))
     {
-        auto& edge  = t.edges[k];
-        auto length = simple_math::distance(t.vertices[edge[0]], t.vertices[edge[1]]);
-        mean_edge_length += (length - mean_edge_length) / (double)(k + 1);
+        auto& edge     = t.edges[k];
+        auto length    = simple_math::distance(t.vertices[edge[0]], t.vertices[edge[1]]);
+        auto prev_mean = mean;
+        mean += (length - mean) / (double)(k + 1);
+        if (k > 0)
+        {
+            variance += (length - prev_mean) * (length - mean) / (double)(k);
+        }
+        if (length < min)
+        {
+            min = length;
+        }
+        if (length > max)
+        {
+            max = length;
+        }
     }
-    return mean_edge_length;
+    return { min, max, mean, variance, sqrt(variance) };
 }
 
 mesh::Mesh to_mesh(const Triangulation& t)

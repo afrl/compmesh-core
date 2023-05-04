@@ -478,6 +478,29 @@ inline double tetra_signed_volume(const Eigen::RowVector3d& p1,
     return (p2 - p1).dot((p3 - p1).cross(p4 - p1)) / 6.0;
 }
 
+Triangulation to_triangulation(const VTMSTowMesh& tow_surface)
+{
+    Triangulation tow_surface_t;
+
+    tow_surface_t.vertices.reserve(tow_surface.mesh.nodes().size());
+    for (auto& n : tow_surface.mesh.nodes())
+    {
+        tow_surface_t.vertices.push_back(n.point());
+    }
+
+    tow_surface_t.triangles.reserve(tow_surface.mesh.elements().size());
+    tow_surface_t.tri_to_marker_map.reserve(tow_surface.mesh.elements().size());
+    for (auto& e : tow_surface.mesh.elements())
+    {
+        auto conn = e.connectivity();
+        tow_surface_t.triangles.push_back({ conn[0], conn[1], conn[2] });
+        tow_surface_t.tri_to_marker_map.push_back(e.component_id());
+    }
+
+    update_edges_and_maps(tow_surface_t);
+
+    return tow_surface_t;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Definitions from header
@@ -491,7 +514,7 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
         throw _UTIL_MSG_EXCEPT("Cannot find file " + file_path);
     }
 
-    std::cout << " - Reading .ctw file: " << file_path << std::endl;
+    std::cout << " - Reading .ctw file: " + file_path + "\n";
 
     VTMSTowMesh tow_surface;
     tow_surface.type = VTMSTowMesh::MeshType::POLY;
@@ -562,8 +585,6 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
               static_cast<ComponentIndex>(new_index);
             tow_surface.mesh.elements().back().component_id() =
               static_cast<ComponentIndex>(new_index);
-            std::cout << " -   Adding facet " << new_index << " for indicator " << facet_indicator
-                      << std::endl;
         }
         else
         {
@@ -621,6 +642,8 @@ VTMSTowMesh read_vtms_stw(const std::string& file_path)
         throw _UTIL_MSG_EXCEPT("Cannot find file " + file_path);
     }
 
+    std::cout << " - Reading .stw file: " + file_path + "\n";
+
     std::string line;
     line                = utility::skip_to_line_that_contains("*Material:", fin);
     auto tokens         = utility::tokenize(line);
@@ -658,7 +681,8 @@ VTMSTowMesh read_vtms_stw(const std::string& file_path)
         {
             LocalIndex p1_1 = stack_index * n_slices + slice_index;
             LocalIndex p1_2 = stack_index * n_slices + slice_index + 1;
-            if (p1_2 == (stack_index + 1) * n_slices) {
+            if (p1_2 == (stack_index + 1) * n_slices)
+            {
                 p1_2 = stack_index * n_slices;
             }
             LocalIndex p2_1 = (stack_index + 1) * n_slices + slice_index;
@@ -698,7 +722,7 @@ VTMSTowMesh read_vtms_stw(const std::string& file_path)
     tow_surface.mesh.elements().add(ElementType::POLYGON, connectivity);
     tow_surface.mesh.elements().back().component_id() = 3;
     tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::BOUNDARY);
-    
+
     // It will start pointing outward, but we will switch this during algorithms
     tow_surface.surface_normal_direction = VTMSTowMesh::NormalDirection::OUTWARD;
 
@@ -809,6 +833,15 @@ double triangulate_tow_surface(VTMSTowMesh& tow_surface, const bool refine)
 
     auto seg_stats = calc_segment_length_stats(tow_surface.mesh);
     return seg_stats.mean;
+}
+
+void clip_by_plane(VTMSTowMesh& tow_surface,
+                   const simple_math::Point& plane_point,
+                   const simple_math::Point& plane_normal)
+{
+    Triangulation tow_surface_t = to_triangulation(tow_surface);
+
+    tow_surface_t.triangle;
 }
 
 void write_to_ply(const Mesh& triangular_surface, const std::string& file_path)
