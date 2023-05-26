@@ -491,7 +491,7 @@ void optimize_tangential_smoothing(Triangulation& t,
 
     // Create a map from each feature to the nodes that compose them
     std::vector<std::vector<mesh::LocalIndex>> facet_id_to_vert_id_map(n_facets);
-    for (auto v_id : utility::indices(t.vertices))
+    for (auto v_id : utility::indices_as<mesh::LocalIndex>(t.vertices))
     {
         for (auto tri_id : vert_to_tri_map.get_indices(v_id))
         {
@@ -889,7 +889,7 @@ void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
                              is_node_constrained,
                              neighbor_counts,
                              delta_v);
-        for (auto i : utility::range(delta_v.size()))
+        for (auto i : utility::indices_as<Index>(delta_v))
         {
             if (!is_node_constrained[i])
             {
@@ -1242,7 +1242,7 @@ void optimize_edge_flips(Triangulation& t, const int n_passes)
             // is the permutation based on the initial values before any flips).
             auto neighbor_sorted_p =
               utility::find_sorted_permutation(initial_max_external_valences);
-            for (auto i : utility::range(orig_connected_edges.size()))
+            for (auto i : utility::indices_as<Index>(orig_connected_edges))
             {
                 auto& sorted_i = neighbor_sorted_p[i];
                 auto edge_id   = orig_connected_edges[sorted_i];

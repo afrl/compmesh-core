@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include "comp_mesh_core/Tetrahedralization.h"
 #include "comp_mesh_core/Triangulation.h"
 
 namespace composite_mesher

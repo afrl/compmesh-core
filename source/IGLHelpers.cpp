@@ -65,7 +65,7 @@ IGLToTriangulationResult igl_to_tri_kernel(const V& vertices, const M& triangles
         auto find_iter          = inserted_triangles.find(hash);
         if (find_iter == inserted_triangles.end())
         {
-            inserted_triangles[hash] = r.t.triangles.size();
+            inserted_triangles[hash] = static_cast<Index>(r.t.triangles.size());
             r.t.triangles.push_back({ conn[0], conn[1], conn[2] });
             r.element_to_origin_tris_map.push_back({ i });
         }

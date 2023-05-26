@@ -1,4 +1,4 @@
-#include "comp_mesh_core/TextileHelpers.h"
+#include "comp_mesh_core/TowSurface.h"
 
 #include "Eigen/Eigen"
 #include "comp_mesh_core/IGLHelpers.h"
@@ -28,7 +28,7 @@ namespace composite_mesher
 
 /// Determines which coordinate axis aligns most closely with the tow path.
 /// @returns 0-based index of axis
-int8_t find_axis_closest_aligned_along_tow(const VTMSTowMesh& tow_mesh)
+int8_t find_axis_closest_aligned_along_tow(const VTMSTowSurface& tow_mesh)
 {
     auto diff = tow_mesh.medials.front() - tow_mesh.medials.back();
     if (diff[0] > diff[1] && diff[0] > diff[2])
@@ -70,7 +70,7 @@ simple_math::Vector3D calculate_polygon_unit_normal(const ElementConstAccessor& 
     return normal.normalized();
 }
 
-void snap_boundary_points(VTMSTowMesh& tow_surface)
+void snap_boundary_points(VTMSTowSurface& tow_surface)
 {
     _UTIL_ASSERT(tow_surface.surface_element_types.size() == tow_surface.mesh.elements().size(),
                  "The surface element types must match the number of elements in the mesh.");
@@ -83,7 +83,7 @@ void snap_boundary_points(VTMSTowMesh& tow_surface)
         auto element = tow_surface.mesh.elements()[element_index];
         auto& type   = tow_surface.surface_element_types[element_index];
 
-        if (type == VTMSTowMesh::SurfaceElementType::BOUNDARY)
+        if (type == VTMSTowSurface::SurfaceElementType::BOUNDARY)
         {
             // Find which plane we are moving this to
             auto normal     = calculate_polygon_unit_normal(element);
@@ -128,7 +128,7 @@ void snap_boundary_points(VTMSTowMesh& tow_surface)
 /// factor*avg_segment_length and combines the nodes.
 /// It then cleans up any polygons with two or less segments,
 /// so there are no unrealistic polygons that are collapsed.
-void remove_short_segments(VTMSTowMesh& tow_surface, const double factor)
+void remove_short_segments(VTMSTowSurface& tow_surface, const double factor)
 {
     // Find the mean and standard deviation
     auto seg_stats    = calc_segment_length_stats(tow_surface.mesh);
@@ -175,7 +175,7 @@ void remove_short_segments(VTMSTowMesh& tow_surface, const double factor)
                              node_to_element.get_element_indices(conn[segment.first]))
                         {
                             if (tow_surface.surface_element_types[element_index] ==
-                                VTMSTowMesh::SurfaceElementType::BOUNDARY)
+                                VTMSTowSurface::SurfaceElementType::BOUNDARY)
                             {
                                 auto normal = calculate_polygon_unit_normal(
                                   tow_surface.mesh.elements()[element_index]);
@@ -199,7 +199,7 @@ void remove_short_segments(VTMSTowMesh& tow_surface, const double factor)
                              node_to_element.get_element_indices(conn[segment.second]))
                         {
                             if (tow_surface.surface_element_types[element_index] ==
-                                VTMSTowMesh::SurfaceElementType::BOUNDARY)
+                                VTMSTowSurface::SurfaceElementType::BOUNDARY)
                             {
                                 auto normal = calculate_polygon_unit_normal(
                                   tow_surface.mesh.elements()[element_index]);
@@ -355,121 +355,6 @@ void remove_short_segments(VTMSTowMesh& tow_surface, const double factor)
     }
 };
 
-/// Refines the segments that define the polygon, for segments larger
-/// than the mean segment length plus numStdDevTol times the standard
-/// deviation of the segment lengths.
-void refine_polygon_segments(VTMSTowMesh& tow_surface, double length_max)
-{
-    // Loop over the polygons and refine the segments
-    std::map<std::size_t, std::vector<LocalIndex>> refined_segments;
-    std::map<std::size_t, LocalIndex> refinement_start_node;
-    for (auto& element : tow_surface.mesh.elements())
-    {
-        // Loop over the edges and check if one is too long, which would need to be refined
-        auto segments      = polygon_segments(element);
-        auto n_segments    = segments.size();
-        auto segment_index = 0;
-        while (segment_index < n_segments)
-        {
-            auto conn     = element.connectivity();
-            auto& segment = segments[segment_index];
-            auto p1       = tow_surface.mesh.nodes()[conn[segment.first]].point();
-            auto p2       = tow_surface.mesh.nodes()[conn[segment.second]].point();
-
-            double segment_length = simple_math::distance(p1, p2);
-
-            if (segment_length > length_max)
-            {
-                // This hash will be the same regardless of the order
-                auto hash = utility::hash_sorted(conn[segment.first], conn[segment.second]);
-
-                // Check to see if this segment has already been refined
-                auto find_iter = refined_segments.find(hash);
-                if (find_iter != refined_segments.end())
-                {
-                    // Just add the nodes to the connectivity if it has been refined already
-                    // Check to ensure the order is the correct direction
-                    if (refinement_start_node[hash] == conn[segment.first])
-                    {
-                        std::vector<LocalIndex> new_conn(conn.begin(), conn.end());
-                        new_conn.insert(
-                          std::find(new_conn.begin(), new_conn.end(), conn[segment.first]) + 1,
-                          find_iter->second.begin(),
-                          find_iter->second.end());
-
-                        tow_surface.mesh.elements().replace_connectivity(element.local_index(),
-                                                                         utility::slice(new_conn));
-
-                        // Update the segments since new points were inserted
-                        segments = polygon_segments(element);
-                        segment_index += static_cast<int>(find_iter->second.size()) + 1;
-                        n_segments = segments.size();
-                    }
-                    // Otherwise we need to reverse the order
-                    else
-                    {
-                        auto reversed_nodes = find_iter->second;
-                        std::reverse(reversed_nodes.begin(), reversed_nodes.end());
-
-                        std::vector<LocalIndex> new_conn(conn.begin(), conn.end());
-                        new_conn.insert(
-                          std::find(new_conn.begin(), new_conn.end(), conn[segment.first]) + 1,
-                          reversed_nodes.begin(),
-                          reversed_nodes.end());
-
-                        tow_surface.mesh.elements().replace_connectivity(element.local_index(),
-                                                                         utility::slice(new_conn));
-
-                        // Update the segments since new points were inserted
-                        segments = polygon_segments(element);
-                        segment_index += static_cast<int>(reversed_nodes.size()) + 1;
-                        n_segments = segments.size();
-                    }
-                }
-                // If it hasn't been refined yet, then add nodes
-                else
-                {
-                    int num_sub_segments =
-                      static_cast<int>((segment_length + 0.5 * length_max) / length_max);
-                    std::vector<Point> linspace_points =
-                      simple_math::linspace(p1, p2, num_sub_segments);
-                    std::vector<Point> new_points(linspace_points.begin() + 1,
-                                                  linspace_points.end() - 1);
-                    // Add the new nodes
-                    std::vector<LocalIndex> new_nodes;
-                    for (auto& new_point : new_points)
-                    {
-                        tow_surface.mesh.nodes().add(new_point);
-                        new_nodes.push_back(tow_surface.mesh.nodes().size() - 1);
-                    }
-
-                    // Save the info for future segments
-                    refined_segments[hash]      = new_nodes;
-                    refinement_start_node[hash] = conn[segment.first];
-
-                    // Add the new nodes to the element connectivity
-                    std::vector<LocalIndex> new_conn(conn.begin(), conn.end());
-                    new_conn.insert(
-                      std::find(new_conn.begin(), new_conn.end(), conn[segment.first]) + 1,
-                      new_nodes.begin(),
-                      new_nodes.end());
-                    tow_surface.mesh.elements().replace_connectivity(element.local_index(),
-                                                                     utility::slice(new_conn));
-
-                    // Update the segments since new points were inserted
-                    segments = polygon_segments(element);
-                    segment_index += num_sub_segments;
-                    n_segments = segments.size();
-                }
-            } // End if length > max length
-            else
-            {
-                segment_index++;
-            }
-        } // End loop over edges
-    }     // End loop over elements
-} // End refine_polygon_segments
-
 inline double tetra_signed_volume(const Eigen::RowVector3d& p1,
                                   const Eigen::RowVector3d& p2,
                                   const Eigen::RowVector3d& p3,
@@ -478,7 +363,7 @@ inline double tetra_signed_volume(const Eigen::RowVector3d& p1,
     return (p2 - p1).dot((p3 - p1).cross(p4 - p1)) / 6.0;
 }
 
-Triangulation to_triangulation(const VTMSTowMesh& tow_surface)
+Triangulation to_triangulation(const VTMSTowSurface& tow_surface)
 {
     Triangulation tow_surface_t;
 
@@ -505,7 +390,7 @@ Triangulation to_triangulation(const VTMSTowMesh& tow_surface)
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Definitions from header
 
-VTMSTowMesh read_vtms_ctw(const std::string& file_path)
+VTMSTowSurface read_vtms_ctw(const std::string& file_path)
 {
     // Open the ctw file
     std::ifstream fin(file_path.c_str());
@@ -516,8 +401,8 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
 
     std::cout << " - Reading .ctw file: " + file_path + "\n";
 
-    VTMSTowMesh tow_surface;
-    tow_surface.type = VTMSTowMesh::MeshType::POLY;
+    VTMSTowSurface tow_surface;
+    tow_surface.type = VTMSTowSurface::MeshType::POLY;
 
     // Read the number of nodes and material number
     std::string token;
@@ -568,11 +453,11 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
 
         if (facet_indicator < 0)
         {
-            tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::BOUNDARY);
+            tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::BOUNDARY);
         }
         else
         {
-            tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::INTERIOR);
+            tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::INTERIOR);
         }
 
         tow_surface.mesh.elements().add(ElementType::POLYGON, connectivity);
@@ -593,7 +478,7 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
     }
 
     // It will start pointing outward, but we will switch this during algorithms
-    tow_surface.surface_normal_direction = VTMSTowMesh::NormalDirection::OUTWARD;
+    tow_surface.surface_normal_direction = VTMSTowSurface::NormalDirection::OUTWARD;
 
     // Skip to the medials data
     line = utility::skip_to_line_that_contains("*Medials:", fin, line);
@@ -634,7 +519,7 @@ VTMSTowMesh read_vtms_ctw(const std::string& file_path)
     return tow_surface;
 }
 
-VTMSTowMesh read_vtms_stw(const std::string& file_path)
+VTMSTowSurface read_vtms_stw(const std::string& file_path)
 {
     std::ifstream fin(file_path.c_str());
     if (!fin)
@@ -654,8 +539,8 @@ VTMSTowMesh read_vtms_stw(const std::string& file_path)
     int n_stacks = atoi(tokens[1].c_str());
     int n_slices = atoi(tokens[3].c_str());
 
-    VTMSTowMesh tow_surface;
-    tow_surface.type = VTMSTowMesh::MeshType::POLY;
+    VTMSTowSurface tow_surface;
+    tow_surface.type = VTMSTowSurface::MeshType::POLY;
 
     std::vector<simple_math::Point> points;
     points.reserve(n_stacks * n_slices);
@@ -694,11 +579,11 @@ VTMSTowMesh read_vtms_stw(const std::string& file_path)
 
             tow_surface.mesh.elements().add(ElementType::T2D3N, { p1_1, p1_2, p2_1 });
             tow_surface.mesh.elements().back().component_id() = 1;
-            tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::INTERIOR);
+            tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::INTERIOR);
 
             tow_surface.mesh.elements().add(ElementType::T2D3N, { p1_2, p2_2, p2_1 });
             tow_surface.mesh.elements().back().component_id() = 1;
-            tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::INTERIOR);
+            tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::INTERIOR);
         }
     }
 
@@ -710,7 +595,7 @@ VTMSTowMesh read_vtms_stw(const std::string& file_path)
     }
     tow_surface.mesh.elements().add(ElementType::POLYGON, connectivity);
     tow_surface.mesh.elements().back().component_id() = 2;
-    tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::BOUNDARY);
+    tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::BOUNDARY);
 
     // Create polygon at second end cap
     connectivity.clear();
@@ -721,22 +606,22 @@ VTMSTowMesh read_vtms_stw(const std::string& file_path)
     std::reverse(connectivity.begin(), connectivity.end());
     tow_surface.mesh.elements().add(ElementType::POLYGON, connectivity);
     tow_surface.mesh.elements().back().component_id() = 3;
-    tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::BOUNDARY);
+    tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::BOUNDARY);
 
     // It will start pointing outward, but we will switch this during algorithms
-    tow_surface.surface_normal_direction = VTMSTowMesh::NormalDirection::OUTWARD;
+    tow_surface.surface_normal_direction = VTMSTowSurface::NormalDirection::OUTWARD;
 
     return tow_surface;
 }
 
-VTMSTowMesh create_tow_surface(const int material_number,
+VTMSTowSurface create_tow_surface(const int material_number,
                                const std::vector<double>& points,
                                const std::vector<LocalIndex>& connectivities,
                                const std::vector<LocalIndex>& n_nodes_per_element,
                                const std::vector<double>& medials)
 {
-    VTMSTowMesh tow_surface;
-    tow_surface.type            = VTMSTowMesh::MeshType::POLY;
+    VTMSTowSurface tow_surface;
+    tow_surface.type            = VTMSTowSurface::MeshType::POLY;
     tow_surface.material_number = material_number;
 
     for (auto i = 0; i < points.size(); i += 3)
@@ -745,7 +630,7 @@ VTMSTowMesh create_tow_surface(const int material_number,
     }
 
     // It will start pointing outward, but we will switch this during algorithms
-    tow_surface.surface_normal_direction = VTMSTowMesh::NormalDirection::OUTWARD;
+    tow_surface.surface_normal_direction = VTMSTowSurface::NormalDirection::OUTWARD;
 
     std::size_t curr_conn_offset = 0;
     tow_surface.surface_element_types.reserve(n_nodes_per_element.size());
@@ -762,11 +647,11 @@ VTMSTowMesh create_tow_surface(const int material_number,
         // points, then it was clipped.
         if (connectivity.size() > 10)
         {
-            tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::BOUNDARY);
+            tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::BOUNDARY);
         }
         else
         {
-            tow_surface.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::INTERIOR);
+            tow_surface.surface_element_types.push_back(VTMSTowSurface::SurfaceElementType::INTERIOR);
         }
 
         tow_surface.mesh.elements().add(ElementType::POLYGON, connectivity);
@@ -780,9 +665,9 @@ VTMSTowMesh create_tow_surface(const int material_number,
     return tow_surface;
 }
 
-double triangulate_tow_surface(VTMSTowMesh& tow_surface, const bool refine)
+double triangulate_tow_surface(VTMSTowSurface& tow_surface, const bool refine)
 {
-    _UTIL_ASSERT(tow_surface.type == VTMSTowMesh::MeshType::POLY,
+    _UTIL_ASSERT(tow_surface.type == VTMSTowSurface::MeshType::POLY,
                  "The tow surface must be polygonal.");
     _UTIL_ASSERT(tow_surface.surface_element_types.size() == tow_surface.mesh.elements().size(),
                  "The surface element types must match the number of elements in the mesh.");
@@ -801,7 +686,7 @@ double triangulate_tow_surface(VTMSTowMesh& tow_surface, const bool refine)
         double length_max = seg_stats.mean + n_std_devs * seg_stats.std_dev;
 
         // Refine to ensure segments are within two std devs of the mean
-        refine_polygon_segments(tow_surface, length_max);
+        refine_all_polygon_segments(tow_surface.mesh, length_max);
 
         // write_vtk(tow_surface.mesh, "surface_post_refine_polygon_segments.vtk");
 
@@ -829,19 +714,19 @@ double triangulate_tow_surface(VTMSTowMesh& tow_surface, const bool refine)
         }
     }
 
-    tow_surface.type = VTMSTowMesh::MeshType::TRI;
+    tow_surface.type = VTMSTowSurface::MeshType::TRI;
 
     auto seg_stats = calc_segment_length_stats(tow_surface.mesh);
     return seg_stats.mean;
 }
 
-void clip_by_plane(VTMSTowMesh& tow_surface,
+void clip_by_plane(VTMSTowSurface& tow_surface,
                    const simple_math::Point& plane_point,
                    const simple_math::Point& plane_normal)
 {
     Triangulation tow_surface_t = to_triangulation(tow_surface);
 
-    tow_surface_t.triangle;
+    //tow_surface_t.triangle;
 }
 
 void write_to_ply(const Mesh& triangular_surface, const std::string& file_path)
@@ -885,78 +770,5 @@ void write_to_ply(const Mesh& triangular_surface, const std::string& file_path)
         fout << std::endl;
     }
     fout.close();
-}
-
-Mesh create_triangular_matrix_box(const Point& n,
-                                  const Point& p,
-                                  const double& target_segment_length)
-{
-    //     ^z
-    //
-    //     4---7
-    //    /|  /|
-    //   5-0-6 3 --> y
-    //   |/  |/
-    //   1---2
-    //
-    //  / x
-    //
-    // where 0 is most negative point, and 6 is most positive point
-    Mesh box;
-
-    box.nodes().add(n);
-    box.nodes().add({ p[0], n[1], n[2] });
-    box.nodes().add({ p[0], p[1], n[2] });
-    box.nodes().add({ n[0], p[1], n[2] });
-    box.nodes().add({ n[0], n[1], p[2] });
-    box.nodes().add({ p[0], n[1], p[2] });
-    box.nodes().add(p);
-    box.nodes().add({ n[0], p[1], p[2] });
-
-    if (target_segment_length > 0.0)
-    {
-        box.elements().add(ElementType::POLYGON, { 0, 3, 2, 1 }, 0, 0, 0); // Bottom
-        box.elements().add(ElementType::POLYGON, { 1, 2, 6, 5 }, 1, 0, 1); // Front
-        box.elements().add(ElementType::POLYGON, { 0, 4, 7, 3 }, 2, 0, 2); // Back
-        box.elements().add(ElementType::POLYGON, { 1, 5, 4, 0 }, 3, 0, 3); // Left side
-        box.elements().add(ElementType::POLYGON, { 3, 7, 6, 2 }, 4, 0, 4); // Right side
-        box.elements().add(ElementType::POLYGON, { 6, 7, 4, 5 }, 5, 0, 5); // Top
-
-        VTMSTowMesh tmp_vtms_obj;
-        tmp_vtms_obj.mesh = std::move(box);
-        for (auto& element : tmp_vtms_obj.mesh.elements())
-        {
-            tmp_vtms_obj.surface_element_types.push_back(VTMSTowMesh::SurfaceElementType::BOUNDARY);
-        }
-        tmp_vtms_obj.type = VTMSTowMesh::MeshType::POLY;
-
-        // Refine to ensure segments are within two std devs of the mean
-        refine_polygon_segments(tmp_vtms_obj, target_segment_length);
-
-        // write_vtk(tmp_vtms_obj.mesh, "surface_post_refine_polygon_segments.vtk");
-
-        triangulate_all_polygons(tmp_vtms_obj.mesh,
-                                 0.5 * target_segment_length * target_segment_length);
-
-        box = std::move(tmp_vtms_obj.mesh);
-        return box;
-    }
-    else
-    {
-        box.elements().add(ElementType::T2D3N, { 2, 1, 0 }, 0, 0, 0); // Bottom
-        box.elements().add(ElementType::T2D3N, { 2, 0, 3 }, 1, 0, 0);
-        box.elements().add(ElementType::T2D3N, { 6, 5, 1 }, 2, 0, 1); // Front
-        box.elements().add(ElementType::T2D3N, { 6, 1, 2 }, 3, 0, 1);
-        box.elements().add(ElementType::T2D3N, { 0, 4, 7 }, 4, 0, 2); // Back
-        box.elements().add(ElementType::T2D3N, { 0, 7, 3 }, 5, 0, 2);
-        box.elements().add(ElementType::T2D3N, { 1, 5, 0 }, 6, 0, 3); // Left side
-        box.elements().add(ElementType::T2D3N, { 0, 5, 4 }, 7, 0, 3);
-        box.elements().add(ElementType::T2D3N, { 3, 7, 6 }, 8, 0, 4); // Right side
-        box.elements().add(ElementType::T2D3N, { 3, 6, 2 }, 9, 0, 4);
-        box.elements().add(ElementType::T2D3N, { 6, 7, 4 }, 10, 0, 5); // Top
-        box.elements().add(ElementType::T2D3N, { 6, 4, 5 }, 11, 0, 5);
-
-        return box;
-    }
 }
 }

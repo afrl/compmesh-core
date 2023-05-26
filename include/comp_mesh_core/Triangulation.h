@@ -21,7 +21,7 @@ struct Triangulation
     /// All triangles connectivity with indices corresponding to positions in vertices
     std::vector<std::array<Index, 3>> triangles;
     /// Total number of markers, which should be max(tri_to_marker_map) + 1
-    Marker n_markers;
+    Marker n_markers = 0;
     /// A marker for each triangle
     std::vector<Marker> tri_to_marker_map;
 
@@ -56,4 +56,5 @@ struct EdgeLengthStats
 EdgeLengthStats query_edge_length_stats(const Triangulation& t);
 
 mesh::Mesh to_mesh(const Triangulation& t);
+Triangulation from_mesh(const mesh::Mesh& m);
 }

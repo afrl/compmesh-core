@@ -4,8 +4,8 @@
 
 namespace composite_mesher
 {
-using ConnIndex = uint8_t;
-using Index     = uint32_t;
+using ConnIndex = mesh::ConnIndex;
+using Index     = mesh::LocalIndex;
 using Marker    = uint32_t;
 using FacetID   = Marker;
 using SeamID   = Marker;

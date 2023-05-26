@@ -24,7 +24,7 @@ SeamInfo segment_seams(const std::vector<std::array<Index, 2>>& edges,
     std::vector<Index> edges_on_seams;
     std::vector<Marker> edge_id_to_seam_id_map(edges.size(), NOT_SET_SeamID);
     std::map<utility::DynamicBitset<64>, std::size_t> bitset_to_seam_id_map;
-    for (auto edge_id : utility::indices(edge_id_to_interface_bitset_map))
+    for (auto edge_id : utility::indices_as<Index>(edge_id_to_interface_bitset_map))
     {
         auto bitset = edge_id_to_interface_bitset_map[edge_id];
         if (bitset.count() > 1)
@@ -34,7 +34,7 @@ SeamInfo segment_seams(const std::vector<std::array<Index, 2>>& edges,
             auto find_iter = bitset_to_seam_id_map.find(bitset);
             if (find_iter == bitset_to_seam_id_map.end())
             {
-                auto next_seam_id               = bitset_to_seam_id_map.size();
+                auto next_seam_id               = static_cast<Index>(bitset_to_seam_id_map.size());
                 bitset_to_seam_id_map[bitset]   = next_seam_id;
                 edge_id_to_seam_id_map[edge_id] = next_seam_id;
             }
@@ -45,7 +45,9 @@ SeamInfo segment_seams(const std::vector<std::array<Index, 2>>& edges,
         }
     }
 
-    SeamInfo seam_info = { bitset_to_seam_id_map.size(), edges_on_seams, edge_id_to_seam_id_map };
+    SeamInfo seam_info = { static_cast<Index>(bitset_to_seam_id_map.size()),
+                           edges_on_seams,
+                           edge_id_to_seam_id_map };
 
     return seam_info;
 }

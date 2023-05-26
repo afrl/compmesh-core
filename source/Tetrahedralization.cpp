@@ -90,12 +90,27 @@ bool check_tri_edge_relations_kernel(const T& t)
 {
     auto& triangles        = t.triangles;
     auto& edges            = t.edges;
+    auto& vertices         = t.vertices;
     auto& tri_to_edges_map = t.tri_to_edges_map;
     auto& edge_to_tris_map = t.edge_to_tris_map;
 
     // Verify triangle-edge relationship maps
     for (auto tri_id : utility::indices(triangles))
     {
+        for (auto i : utility::range(3))
+        {
+            auto& v_id = triangles[tri_id][i];
+            if (!(v_id >= 0 && v_id < vertices.size()))
+            {
+                std::cout << "Triangle " + std::to_string(tri_id) + " references invalid vertex " +
+                               std::to_string(v_id)
+                          << std::endl;
+            }
+            _UTIL_ASSERT(v_id >= 0 && v_id < vertices.size(),
+                         "Triangle " + std::to_string(tri_id) + " references invalid vertex " +
+                           std::to_string(v_id));
+        }
+
         auto& edge_info = mesh::get_edge_info(mesh::ElementType::T2D3N);
         assert(edge_info.size() == 3);
 

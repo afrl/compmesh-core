@@ -14,7 +14,10 @@ namespace composite_mesher
 /// - tri_to_edges_map
 void update_edges_and_maps(Triangulation& t)
 {
-    t.n_markers = *std::max_element(t.tri_to_marker_map.begin(), t.tri_to_marker_map.end()) + 1;
+    if (!t.tri_to_marker_map.empty())
+    {
+        t.n_markers = *std::max_element(t.tri_to_marker_map.begin(), t.tri_to_marker_map.end()) + 1;
+    }
 
     auto& edge_info = mesh::get_edge_info(mesh::ElementType::T2D3N);
     assert(edge_info.size() == 3);
@@ -102,5 +105,29 @@ mesh::Mesh to_mesh(const Triangulation& t)
         m.elements().back().component_id() = t.tri_to_marker_map[i];
     }
     return m;
+}
+
+Triangulation from_mesh(const mesh::Mesh& m)
+{
+    Triangulation tow_surface_t;
+
+    tow_surface_t.vertices.reserve(m.nodes().size());
+    for (auto& n : m.nodes())
+    {
+        tow_surface_t.vertices.push_back(n.point());
+    }
+
+    tow_surface_t.triangles.reserve(m.elements().size());
+    tow_surface_t.tri_to_marker_map.reserve(m.elements().size());
+    for (auto& e : m.elements())
+    {
+        auto conn = e.connectivity();
+        tow_surface_t.triangles.push_back({ conn[0], conn[1], conn[2] });
+        tow_surface_t.tri_to_marker_map.push_back(e.component_id());
+    }
+
+    update_edges_and_maps(tow_surface_t);
+
+    return tow_surface_t;
 }
 }
