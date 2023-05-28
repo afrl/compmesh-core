@@ -521,13 +521,13 @@ VTMSTowSurface read_vtms_ctw(const std::string& file_path)
 
 VTMSTowSurface read_vtms_stw(const std::string& file_path)
 {
+    std::cout << " - Reading .stw file: " + file_path + "\n";
+
     std::ifstream fin(file_path.c_str());
     if (!fin)
     {
         throw _UTIL_MSG_EXCEPT("Cannot find file " + file_path);
     }
-
-    std::cout << " - Reading .stw file: " + file_path + "\n";
 
     std::string line;
     line                = utility::skip_to_line_that_contains("*Material:", fin);

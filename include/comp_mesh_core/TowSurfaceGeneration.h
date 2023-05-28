@@ -18,7 +18,11 @@ namespace composite_mesher
 /// @param n_points_around_each_cross_section - number of points to sample around the spline fit of
 ///        each cross-sectional boundary (determines the resolution of the discretized
 ///        cross-sections)
-/// @param min_angle_allowed - minimum angle allowed between any two sequential cross-sections (more
+/// @param max_angle_allowed_between_fibers_and_plane - maximum angle allowed between any fiber and
+///        a vector normal to the plane for a given cross-section (the cross-section will be skipped
+///        if the criteria would be violated).
+/// @param min_angle_allowed_between_cross_sections - minimum angle allowed between any two
+/// sequential cross-sections (more
 ///        cross-sections will be added if a new cross-section would violate it).
 /// @param n_cutbacks_allowed - indicates how many times the increment can be halved when the angle
 ///        criterion (see parameter above) is violated.
@@ -26,7 +30,8 @@ namespace composite_mesher
 VTMSTowSurface generate_surface(const FiberBundle& bundle,
                                 const int nominal_n_cross_sections,
                                 const int n_points_around_each_cross_section,
-                                const double min_angle_allowed,
+                                const double max_angle_allowed_between_fibers_and_plane,
+                                const double min_angle_allowed_between_cross_sections,
                                 const int n_cutbacks_allowed);
 
 // Below are all of the building blocks for generate_surface, but they are available to use for
@@ -47,6 +52,7 @@ struct CrossSectionPlane
     // Note: this is also the segment used in the averaging calculation that computes the plane's
     // point and normal.
     std::vector<Index> extrapolated_fiber_intersected_segments;
+    std::vector<simple_math::Vector3D> fiber_tangents;
 };
 
 
@@ -108,6 +114,7 @@ struct IntersectedCrossSection
     std::vector<simple_math::Vector3D> fiber_intersections;
     std::vector<Index> fiber_intersected_segments;
     std::vector<double> fiber_segment_intersection_fractions;
+    std::vector<double> fiber_intersection_length;
 };
 
 
@@ -135,7 +142,8 @@ struct IntersectedCrossSection
 std::vector<IntersectedCrossSection> identify_cross_section_planes_and_intersections(
   const FiberBundle& bundle,
   const int n_cross_sections,
-  const double min_angle_allowed,
+  const double max_angle_deviation_for_cross_section_allowed,
+  const double min_angle_between_cross_sections_allowed,
   const int n_cutbacks_allowed);
 
 struct DiscretizedCrossSection
