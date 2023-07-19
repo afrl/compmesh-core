@@ -5,6 +5,7 @@
 #include "comp_mesh_core/VertexMap.h"
 #include "mesh/algorithms/IO.h"
 #include "mesh/relations/NodeToElementMap.h"
+#include "simple_math/LineGeometry.h"
 #include "simple_math/Utility.h"
 #include "utility/Hash.h"
 #include "utility/Permutation.h"
