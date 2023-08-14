@@ -523,7 +523,7 @@ Triangulation clip_by_plane(const Triangulation& t,
             for (auto& e : m.elements())
             {
                 assert(e.type() == mesh::ElementType::T2D3N);
-                auto& conn = e.connectivity();
+                auto conn = e.connectivity();
                 clipped_t.triangles.push_back({ conn[0], conn[1], conn[2] });
                 clipped_t.tri_to_marker_map.push_back(clipped_t.n_markers);
             }

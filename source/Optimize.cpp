@@ -894,7 +894,7 @@ void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
         {
             if (!is_node_constrained[i])
             {
-                auto& node = surface_mesh.nodes()[i];
+                auto node = surface_mesh.nodes()[i];
                 for (auto j : utility::range(3))
                 {
                     node.point(j) += lambda * delta_v[i][j];
@@ -911,7 +911,7 @@ void optimize_taubin_smoothing(mesh::Mesh& surface_mesh,
         {
             if (!is_node_constrained[i])
             {
-                auto& node = surface_mesh.nodes()[i];
+                auto node = surface_mesh.nodes()[i];
                 for (auto j : utility::range(3))
                 {
                     node.point(j) += mu * delta_v[i][j];

@@ -92,7 +92,7 @@ IGLTriSurf mesh_to_igl(const mesh::Mesh& m)
     surf.triangles.resize(m.elements().size(), 3);
     for (auto& e : m.elements())
     {
-        auto& conn = e.connectivity();
+        auto conn = e.connectivity();
         for (auto i : utility::range(3))
         {
             surf.triangles(e.local_index(), i) = conn[i];
@@ -117,7 +117,7 @@ IGLTriSurf mesh_to_igl(const mesh::Mesh& m, const mesh::ComponentIndex& componen
         if (e.component_id() == component_to_extract)
         {
             n_elements_in_component++;
-            auto& conn = e.connectivity();
+            auto conn = e.connectivity();
             assert(conn.size() == 3); // only works for triangles
             for (auto i : utility::range(3))
             {
@@ -147,7 +147,7 @@ IGLTriSurf mesh_to_igl(const mesh::Mesh& m, const mesh::ComponentIndex& componen
     {
         if (e.component_id() == component_to_extract)
         {
-            auto& conn = e.connectivity();
+            auto conn = e.connectivity();
             for (auto i : utility::range(3))
             {
                 surf.triangles(curr_index, i) = m_to_c_node_map[conn[i]];
@@ -179,7 +179,7 @@ IGLTriSurf mesh_to_igl(const mesh::Mesh& m,
         if (components_to_extract_set.count(e.component_id()) > 0)
         {
             n_elements_in_component++;
-            auto& conn = e.connectivity();
+            auto conn = e.connectivity();
             assert(conn.size() == 3); // only works for triangles
             for (auto i : utility::range(3))
             {
@@ -209,7 +209,7 @@ IGLTriSurf mesh_to_igl(const mesh::Mesh& m,
     {
         if (components_to_extract_set.count(e.component_id()) > 0)
         {
-            auto& conn = e.connectivity();
+            auto conn = e.connectivity();
             for (auto i : utility::range(3))
             {
                 surf.triangles(curr_index, i) = m_to_c_node_map[conn[i]];
@@ -442,7 +442,7 @@ IGLTetrahedralization mesh_to_igl_tet(const mesh::Mesh& m)
     igl.tetrahedra.resize(m.elements().size(), 4);
     for (auto& e : m.elements())
     {
-        auto& conn = e.connectivity();
+        auto conn = e.connectivity();
         for (auto i : utility::range(4))
         {
             igl.tetrahedra(e.local_index(), i) = conn[i];
