@@ -7,6 +7,7 @@
 #include "mesh/relations/NodeToElementMap.h"
 #include "simple_math/LineGeometry.h"
 #include "simple_math/Utility.h"
+#include "simple_math/LineGeometry.h"
 #include "utility/Hash.h"
 #include "utility/Permutation.h"
 #include "utility/VectorSet.h"

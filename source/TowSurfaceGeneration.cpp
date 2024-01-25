@@ -3,6 +3,7 @@
 #include "comp_mesh_core/GlobalOptions.h"
 #include "mesh/algorithms/IO.h"
 #include "simple_math/ConvexHull.h"
+#include "simple_math/PlaneGeometry.h"
 #include "simple_math/SplineLine.h"
 #include "simple_math/Utility.h"
 
@@ -620,6 +621,13 @@ std::vector<DiscretizedCrossSection> discretize_cross_sections(
         {
             is_fiber_convex_hull[i] = true;
         }
+
+        // Transform to 2D
+        auto fiber_intersections_2d =
+          simple_math::plane_2d_projection(cs.normal, cs.point, cs.fiber_intersections);
+
+        // Fit piecewise spline
+        // TODO
 
         // With the convex hull of each cross-section determined, fit each convex hull with a
         // spline line, which will be used to sample discrete points to define the cross-section
