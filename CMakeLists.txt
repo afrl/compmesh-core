@@ -19,7 +19,7 @@ set(SHEFF_SECOND_DEPENDS "")
 # the flexibility needed for various packages.
 set(SHEFF_THIRD_DEPENDS_name "eigen;boost")
 set(SHEFF_THIRD_DEPENDS_package "Eigen3;Boost")
-set(SHEFF_THIRD_DEPENDS_target "Eigen3::Eigen;Boost_multiprecision")
+set(SHEFF_THIRD_DEPENDS_target "Eigen3::Eigen;Boost::boost")
 
 # External dependencies need to be found from the system (such as MPI)
 # toggle_var indicates the variable name that controls whether the package is included.
