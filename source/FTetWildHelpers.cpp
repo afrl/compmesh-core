@@ -7,8 +7,8 @@
 
 namespace composite_mesher
 {
-mesh::Mesh composite_mesher::tetrahedralize_ftetwild(const mesh::Mesh& object_surface,
-                                                     const double ideal_relative_edge_length)
+mesh::Mesh tetrahedralize_ftetwild(const mesh::Mesh& object_surface,
+                                   const double ideal_relative_edge_length)
 {
     return tetrahedralize_ftetwild(std::vector<mesh::Mesh>({ object_surface }),
                                    ideal_relative_edge_length);

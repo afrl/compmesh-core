@@ -7,6 +7,7 @@
 #include "simple_math/SplineLine.h"
 #include "simple_math/Utility.h"
 
+#include <cmath>
 #include <vector>
 
 namespace composite_mesher
@@ -709,7 +710,7 @@ std::vector<DiscretizedCrossSection> discretize_cross_sections(
         for (auto i : utility::range(s.size() - 1))
         {
             auto sample = spline.at_s(s[i]);
-            if (isnan(sample.point[0]))
+            if (std::isnan(sample.point[0]))
             {
                 mesh::Mesh m;
                 for (auto p : spline_fit_points)
@@ -717,7 +718,7 @@ std::vector<DiscretizedCrossSection> discretize_cross_sections(
                     m.nodes().add(p);
                 }
                 mesh::write_vtk(m, "error_spline_points.vtk");
-                _UTIL_ASSERT(!isnan(sample.point[0]), "Spline failed");
+                _UTIL_ASSERT(!std::isnan(sample.point[0]), "Spline failed");
             }
             discrete_cross_section_points[i] = simple_math::point_as_vector(sample.point);
         }

@@ -68,6 +68,32 @@ macro(SPECIAL_TARGET_COMMANDS)
 
     #target_link_libraries(comp_mesh_core PUBLIC Boost::boost Boost::multiprecision)
 
+    if(NOT TARGET Boost::thread OR NOT TARGET Boost::system)
+        list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/../../third_party/boost_install_dir")
+        find_package(Boost CONFIG REQUIRED COMPONENTS thread system HINTS
+                     "${PROJECT_SOURCE_DIR}/../../third_party/boost_install_dir"
+                     "${PROJECT_SOURCE_DIR}/../boost_install_dir")
+    endif()
+
+    if(NOT WIN32)
+        if(NOT TARGET gmp::gmp)
+            find_path(gmp_INCLUDE_DIR NAMES gmp.h REQUIRED)
+            find_path(gmpxx_INCLUDE_DIR NAMES gmpxx.h REQUIRED)
+            find_library(GMP_C_LIBRARY NAMES gmp REQUIRED)
+            find_library(GMP_CXX_LIBRARY NAMES gmpxx REQUIRED)
+            add_library(gmp::gmp INTERFACE IMPORTED GLOBAL)
+            target_include_directories(gmp::gmp INTERFACE "${gmp_INCLUDE_DIR}" "${gmpxx_INCLUDE_DIR}")
+            target_link_libraries(gmp::gmp INTERFACE "${GMP_CXX_LIBRARY}" "${GMP_C_LIBRARY}")
+        endif()
+        if(NOT TARGET mpfr::mpfr)
+            find_path(mpfr_INCLUDE_DIR NAMES mpfr.h REQUIRED)
+            find_library(MPFR_C_LIBRARY NAMES mpfr REQUIRED)
+            add_library(mpfr::mpfr INTERFACE IMPORTED GLOBAL)
+            target_include_directories(mpfr::mpfr INTERFACE "${mpfr_INCLUDE_DIR}")
+            target_link_libraries(mpfr::mpfr INTERFACE "${MPFR_C_LIBRARY}" gmp::gmp)
+        endif()
+    endif()
+
     # LIBIGL Options
     set(LIBIGL_BUILD_TESTS           OFF CACHE BOOL "" FORCE)
     set(LIBIGL_BUILD_TUTORIALS       OFF CACHE BOOL "" FORCE)
